@@ -1,72 +1,75 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+import requests
+from datetime import datetime
+bot_token = "8119532010:AAHBTjlpUUgln260B1a2leDOu1oy6A2WnRo"
+chat_id = "6460198665"  # Replace with your Telegram user ID or channel ID
+def send_trade_signal(symbol, action, expiration_minutes):
+    current_time = datetime.now().strftime("%H:%M")
+    emoji = "🟩" if action.upper() == "BUY" else "🟥"
+    message = (
+        f"{symbol}\n"
+        f"🕘 Expiration {expiration_minutes}M\n"
+        f"⏺ Entry at {current_time}\n"
+        f"{emoji} {action.upper()}"
+    )
+    
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": message}
+    
+    response = requests.post(url, data=payload)
+    if response.status_code == 200:
+        print("Telegram message sent successfully")
+    else:
+        print("Failed to send Telegram message:", response.text)
 import time
 import pandas as pd
 import ta
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+import requests
 
-chrome_options = Options()
-## Uncomment the line below to run Chrome in headless mode.
-# chrome_options.add_argument("--headless=new")
-chrome_options.add_argument("--disable-gpu")
-chrome_options.add_argument("--no-sandbox")
-driver = webdriver.Chrome(options=chrome_options)
+API_KEY = "652c4b836e0a44a8bb6c5b5004c7057c"
 
-pairs = ["EURUSD", "GBPUSD", "USDJPY", "BTCUSDT"]
-tabs = {}
+pairs = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "EURJPY", "GBPJPY", "EURGBP", "ETHUSD"]
 
-driver.get("https://www.tradingview.com")
-tabs["watchlist"] = driver.current_window_handle
-time.sleep(2)
+print("Available pairs:")
+for i, p in enumerate(pairs, start=1):
+    print(f"{i}. {p}")
+# Ask user which pair to track by index
+choice = input(f"What pair do you want to track? (1-{len(pairs)}): ")
+try:
+    choice = int(choice)
+except ValueError:
+    print(f"Invalid input. Please enter an integer between 1 and {len(pairs)}.")
+    exit(1)
+if not (1 <= choice <= len(pairs)):
+    print(f"Choice must be between 1 and {len(pairs)}.")
+    exit(1)
+pairs = [pairs[choice - 1]]
+
+print(f"Tracking the following pairs: {pairs}")
 
 price_history = {pair: [] for pair in pairs}
-
-def scrape_price(pair: str):
-    driver.switch_to.window(tabs["watchlist"])
-    normalized_pair = pair.upper().replace("/", "").replace(" ", "").replace("FX", "")
-    try:
-        rows = WebDriverWait(driver, 10).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.tv-data-table__row"))
-        )
-    except:
-        return None
-    for row in rows:
-        try:
-            spans = row.find_elements(By.TAG_NAME, "span")
-            if not spans:
-                continue
-            span_texts = [span.text.strip() for span in spans]
-            symbol_text = span_texts[0].upper().replace("/", "").replace(" ", "").replace("FX", "")
-            if normalized_pair == symbol_text:
-                try:
-                    price_elems = row.find_elements(By.CSS_SELECTOR, "span.highlight-maJ2WnzA.highlight-BSF4XTsE.price-qWcO4bp9")
-                    if not price_elems:
-                        return None
-                    price_text = "".join("".join(span.text for span in price_elem.find_elements(By.TAG_NAME, "span")) if price_elem.find_elements(By.TAG_NAME, "span") else price_elem.text for price_elem in price_elems).replace(",", "")
-                    price = float(price_text)
-                    return price
-                except Exception as e:
-                    return None
-        except:
-            continue
-    return None
 
 if __name__ == "__main__":
     try:
         while True:
             for symbol in pairs:
-                price = scrape_price(symbol)
-                if price is None:
-                    print(f"{symbol}: Price not found")
+                if symbol == "ETHUSD":
+                    formatted_symbol = "ETH/USD:Binance"
+                else:
+                    formatted_symbol = f"{symbol[:-3]}/{symbol[-3:]}"
+                url = f"https://api.twelvedata.com/time_series?symbol={formatted_symbol}&interval=1min&apikey={API_KEY}&outputsize=30"
+                response = requests.get(url)
+                raw = response.json()
+                if "values" not in raw:
+                    print(f"{symbol}: No data returned")
                     continue
-                history = price_history[symbol]
-                history.append(price)
-                if len(history) > 20:
-                    history.pop(0)
-                df = pd.DataFrame(history, columns=["close"])
+                df = pd.DataFrame(raw["values"])
+                df["datetime"] = pd.to_datetime(df["datetime"])
+                df = df.sort_values("datetime")
+                df["close"] = df["close"].astype(float)
+                price = df["close"].iloc[-1]
+
                 rsi_indicator = ta.momentum.RSIIndicator(df["close"], window=14)
                 rsi_values = rsi_indicator.rsi()
                 last_rsi = rsi_values.iloc[-1] if len(rsi_values) > 0 else None
@@ -80,9 +83,14 @@ if __name__ == "__main__":
                 if last_rsi is None or ema_20 is None or macd is None:
                     signal = "HOLD"
                 else:
-                    if last_rsi < 30 and price > ema_20 and macd > 0:
+                    # Determine status for each indicator
+                    rsi_status = "BUY" if last_rsi < 40 else "SELL" if last_rsi > 60 else "HOLD"
+                    ema_status = "BUY" if price > ema_20 * 1.0005 else "SELL" if price < ema_20 * 0.9995 else "HOLD"
+                    macd_status = "BUY" if macd > 0.05 else "SELL" if macd < -0.05 else "HOLD"
+                    statuses = [rsi_status, ema_status, macd_status]
+                    if statuses.count("BUY") >= 2:
                         signal = "BUY"
-                    elif last_rsi > 70 and price < ema_20 and macd < 0:
+                    elif statuses.count("SELL") >= 2:
                         signal = "SELL"
                     else:
                         signal = "HOLD"
@@ -91,18 +99,22 @@ if __name__ == "__main__":
                 macd_str = f"{macd:.5f}" if macd is not None else "N/A"
                 rsi_str = f"{last_rsi:.2f}" if last_rsi is not None else "N/A"
 
-                print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} | EMA20: {ema_str} | MACD: {macd_str} | Signal: {signal}")
+                print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | Signal: {signal}")
 
                 if signal in ("BUY", "SELL"):
-                    expiration_time = (datetime.utcnow() + timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M:%S UTC")
+                    expiration_minutes = 1
+                    expiration_time = f"{expiration_minutes} minutes"
                     trade_signal = {
-                        "pair": symbol,
+                        "pair": formatted_symbol,
                         "action": signal,
-                        "expiration": expiration_time
+                        "expiration": expiration_time,
+                        "time": datetime.now(ZoneInfo("America/New_York")).strftime("%H:%M:%S %Z")
                     }
-                    print(f"Trade Signal: {trade_signal}")
+                    send_trade_signal(formatted_symbol, signal, expiration_minutes)
 
-            time.sleep(60)
+            # Wait until the start of the next minute
+            now = datetime.now()
+            seconds_to_wait = 60 - now.second
+            time.sleep(seconds_to_wait)
     except KeyboardInterrupt:
         print("Exiting...")
-        driver.quit()
