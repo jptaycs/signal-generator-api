@@ -7,7 +7,7 @@ def send_trade_signal(symbol, action, expiration_minutes):
     emoji = "🟩" if action.upper() == "BUY" else "🟥"
     message = (
         f"{symbol}\n"
-        f"🕘 Expiration {expiration_minutes}M\n"
+        # f"🕘 Expiration {expiration_minutes}M\n"
         f"⏺ Entry at {current_time}\n"
         f"{emoji} {action.upper()}"
     )
@@ -16,9 +16,7 @@ def send_trade_signal(symbol, action, expiration_minutes):
     payload = {"chat_id": chat_id, "text": message}
     
     response = requests.post(url, data=payload)
-    if response.status_code == 200:
-        print("Telegram message sent successfully")
-    else:
+    if response.status_code != 200:
         print("Failed to send Telegram message:", response.text)
 import time
 import pandas as pd
@@ -27,24 +25,41 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import requests
 
-API_KEY = "652c4b836e0a44a8bb6c5b5004c7057c"
+API_KEY = "6debb834d8274930911045d03bf65673"
+# jptayco1109 - 652c4b836e0a44a8bb6c5b5004c7057c
+# jptayco 2002 - 67a1d34cee5c4fe6a3bac7d5bc1bf864
+# appnado - cf4fae9291334c638b4e71dc125a0863
+# sweet - 62a2531773df4b6aa408b234041256d9
+# sweet2 - 6debb834d8274930911045d03bf65673
 
-pairs = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "EURJPY", "GBPJPY", "EURGBP", "ETHUSD"]
+
+pairs = [
+    "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD",
+    "USD/CAD", "USD/CHF", "EUR/JPY",
+    "GBP/JPY", "EUR/GBP", "EUR/AUD", "AUD/JPY",
+    "CHF/JPY", "EUR/CHF", "GBP/CHF", "NZD/JPY",
+    "AUD/CAD", "AUD/CHF", "CAD/JPY"
+]
 
 print("Available pairs:")
 for i, p in enumerate(pairs, start=1):
     print(f"{i}. {p}")
-# Ask user which pair to track by index
-choice = input(f"What pair do you want to track? (1-{len(pairs)}): ")
+# Ask user which pair to track by index, or all
+choice = input(f"What pair do you want to track? (0 for All, 1-{len(pairs)}): ")
 try:
     choice = int(choice)
 except ValueError:
-    print(f"Invalid input. Please enter an integer between 1 and {len(pairs)}.")
+    print(f"Invalid input. Please enter an integer between 0 and {len(pairs)}.")
     exit(1)
-if not (1 <= choice <= len(pairs)):
-    print(f"Choice must be between 1 and {len(pairs)}.")
+
+if choice == 0:
+    # Track all pairs
+    pass
+elif 1 <= choice <= len(pairs):
+    pairs = [pairs[choice - 1]]
+else:
+    print(f"Choice must be between 0 and {len(pairs)}.")
     exit(1)
-pairs = [pairs[choice - 1]]
 
 print(f"Tracking the following pairs: {pairs}")
 
@@ -53,16 +68,15 @@ price_history = {pair: [] for pair in pairs}
 if __name__ == "__main__":
     try:
         while True:
-            for symbol in pairs:
-                if symbol == "ETHUSD":
-                    formatted_symbol = "ETH/USD:Binance"
-                else:
-                    formatted_symbol = f"{symbol[:-3]}/{symbol[-3:]}"
-                url = f"https://api.twelvedata.com/time_series?symbol={formatted_symbol}&interval=1min&apikey={API_KEY}&outputsize=30"
+            failed_pairs = set()
+            for symbol in list(pairs):
+                if symbol in failed_pairs:
+                    continue
+                url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval=1min&apikey={API_KEY}&outputsize=30"
                 response = requests.get(url)
                 raw = response.json()
                 if "values" not in raw:
-                    print(f"{symbol}: No data returned")
+                    failed_pairs.add(symbol)
                     continue
                 df = pd.DataFrame(raw["values"])
                 df["datetime"] = pd.to_datetime(df["datetime"])
@@ -80,37 +94,71 @@ if __name__ == "__main__":
                 ema_26 = df["close"].ewm(span=26, adjust=False).mean()
                 macd = (ema_12 - ema_26).iloc[-1] if len(df) >= 26 else None
 
+                # Stochastic Oscillator
+                stoch = ta.momentum.StochasticOscillator(
+                    high=df["close"], low=df["close"], close=df["close"], window=14, smooth_window=3
+                )
+                stoch_k = stoch.stoch().iloc[-1] if len(df) > 0 else None
+
+                # Bollinger Bands
+                bb = ta.volatility.BollingerBands(close=df["close"], window=20, window_dev=2)
+                bb_high = bb.bollinger_hband().iloc[-1] if len(df) > 0 else None
+                bb_low = bb.bollinger_lband().iloc[-1] if len(df) > 0 else None
+
+                # Commodity Channel Index (CCI)
+                cci = ta.trend.CCIIndicator(high=df["close"], low=df["close"], close=df["close"], window=20)
+                last_cci = cci.cci().iloc[-1] if len(df) > 0 else None
+
+                # Average Directional Index (ADX)
+                adx = ta.trend.ADXIndicator(high=df["close"], low=df["close"], close=df["close"], window=14)
+                last_adx = adx.adx().iloc[-1] if len(df) > 0 else None
+
                 if last_rsi is None or ema_20 is None or macd is None:
                     signal = "HOLD"
                 else:
-                    # Determine status for each indicator
-                    rsi_status = "BUY" if last_rsi < 40 else "SELL" if last_rsi > 60 else "HOLD"
-                    ema_status = "BUY" if price > ema_20 * 1.0005 else "SELL" if price < ema_20 * 0.9995 else "HOLD"
-                    macd_status = "BUY" if macd > 0.05 else "SELL" if macd < -0.05 else "HOLD"
-                    statuses = [rsi_status, ema_status, macd_status]
-                    if statuses.count("BUY") >= 2:
-                        signal = "BUY"
-                    elif statuses.count("SELL") >= 2:
-                        signal = "SELL"
+                    # Determine status for each indicator (even looser thresholds)
+                    rsi_status = "BUY" if last_rsi < 48 else "SELL" if last_rsi > 52 else "HOLD"
+                    ema_status = "BUY" if price > ema_20 * 1.0001 else "SELL" if price < ema_20 * 0.9999 else "HOLD"
+                    macd_status = "BUY" if macd > 0 else "SELL" if macd < 0 else "HOLD"
+                    stoch_status = "BUY" if stoch_k is not None and stoch_k < 20 else "SELL" if stoch_k is not None and stoch_k > 80 else "HOLD"
+                    bb_status = "BUY" if bb_low is not None and price < bb_low else "SELL" if bb_high is not None and price > bb_high else "HOLD"
+                    cci_status = "BUY" if last_cci is not None and last_cci < -100 else "SELL" if last_cci is not None and last_cci > 100 else "HOLD"
+                    adx_status = "BUY" if last_adx is not None and last_adx > 25 and macd > 0 else "SELL" if last_adx is not None and last_adx > 25 and macd < 0 else "HOLD"
+
+                    statuses = [rsi_status, ema_status, macd_status, stoch_status, bb_status, cci_status, adx_status]
+                    buy_count = statuses.count("BUY")
+                    sell_count = statuses.count("SELL")
+                    hold_count = statuses.count("HOLD")
+
+                    if buy_count >= 4:
+                        signal = f"BUY (score={buy_count})"
+                    elif sell_count >= 4:
+                        signal = f"SELL (score={sell_count})"
                     else:
-                        signal = "HOLD"
+                        signal = f"HOLD (score={hold_count})"
 
                 ema_str = f"{ema_20:.5f}" if ema_20 is not None else "N/A"
                 macd_str = f"{macd:.5f}" if macd is not None else "N/A"
                 rsi_str = f"{last_rsi:.2f}" if last_rsi is not None else "N/A"
+                stoch_str = f"{stoch_k:.2f}" if stoch_k is not None else "N/A"
+                bb_high_str = f"{bb_high:.5f}" if bb_high is not None else "N/A"
+                bb_low_str = f"{bb_low:.5f}" if bb_low is not None else "N/A"
+                cci_str = f"{last_cci:.2f}" if last_cci is not None else "N/A"
+                adx_str = f"{last_adx:.2f}" if last_adx is not None else "N/A"
 
-                print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | Signal: {signal}")
+                if not signal.startswith("HOLD"):
+                    print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | Stoch: {stoch_str} ({stoch_status}) | BB: Low {bb_low_str}, High {bb_high_str} ({bb_status}) | CCI: {cci_str} ({cci_status}) | ADX: {adx_str} ({adx_status}) | Signal: {signal} | Breakdown: BUY={buy_count}, SELL={sell_count}, HOLD={hold_count}")
 
-                if signal in ("BUY", "SELL"):
+                if signal.startswith("BUY") or signal.startswith("SELL"):
                     expiration_minutes = 1
                     expiration_time = f"{expiration_minutes} minutes"
                     trade_signal = {
-                        "pair": formatted_symbol,
+                        "pair": symbol,
                         "action": signal,
                         "expiration": expiration_time,
                         "time": datetime.now(ZoneInfo("America/New_York")).strftime("%H:%M:%S %Z")
                     }
-                    send_trade_signal(formatted_symbol, signal, expiration_minutes)
+                    send_trade_signal(symbol, signal.split()[0], expiration_minutes)
 
             # Wait until the start of the next minute
             now = datetime.now()
