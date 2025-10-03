@@ -54,7 +54,6 @@ pairs = [
     "GBP/CHF", 
     # "GBP/JPY", 
     "GBP/USD", 
-    # "NZD/JPY",
     # "USD/CAD", 
     "USD/CHF", 
     "USD/JPY", 
@@ -128,6 +127,17 @@ if __name__ == "__main__":
                 adx = ta.trend.ADXIndicator(high=df["close"], low=df["close"], close=df["close"], window=14)
                 last_adx = adx.adx().iloc[-1] if len(df) > 0 else None
 
+                # Set dynamic expiration_minutes based on last_adx
+                if last_adx is not None:
+                    if last_adx >= 25:
+                        expiration_minutes = 30
+                    elif 20 <= last_adx < 25:
+                        expiration_minutes = 10
+                    else:
+                        expiration_minutes = None
+                else:
+                    expiration_minutes = None
+
                 if last_rsi is None or ema_20 is None or macd is None:
                     signal = "HOLD"
                 else:
@@ -145,12 +155,15 @@ if __name__ == "__main__":
                     sell_count = statuses.count("SELL")
                     hold_count = statuses.count("HOLD")
 
-                    if buy_count >= 4:
-                        signal = f"BUY (score={buy_count})"
-                    elif sell_count >= 4:
-                        signal = f"SELL (score={sell_count})"
+                    if last_adx is not None and last_adx < 20:
+                        signal = "HOLD"
                     else:
-                        signal = f"HOLD (score={hold_count})"
+                        if buy_count >= 3:
+                            signal = f"BUY (score={buy_count})"
+                        elif sell_count >= 3:
+                            signal = f"SELL (score={sell_count})"
+                        else:
+                            signal = f"HOLD (score={hold_count})"
 
                 ema_str = f"{ema_20:.5f}" if ema_20 is not None else "N/A"
                 macd_str = f"{macd:.5f}" if macd is not None else "N/A"
@@ -163,8 +176,7 @@ if __name__ == "__main__":
 
                 print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | Stoch: {stoch_str} ({stoch_status}) | BB: Low {bb_low_str}, High {bb_high_str} ({bb_status}) | CCI: {cci_str} ({cci_status}) | ADX: {adx_str} ({adx_status}) | Signal: {signal} | Breakdown: BUY={buy_count}, SELL={sell_count}, HOLD={hold_count}")
 
-                if signal.startswith("BUY") or signal.startswith("SELL"):
-                    expiration_minutes = 5
+                if (signal.startswith("BUY") or signal.startswith("SELL")) and expiration_minutes is not None:
                     expiration_time = f"{expiration_minutes} minutes"
                     trade_signal = {
                         "pair": symbol,
