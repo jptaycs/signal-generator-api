@@ -4,6 +4,9 @@ import time
 import pandas as pd
 import ta
 from zoneinfo import ZoneInfo
+import threading
+import websocket
+import json
 
 API_KEY = "e0c7cd3a05a448bda0c737c99cc4790f"
 # Unli - e0c7cd3a05a448bda0c737c99cc4790f
@@ -42,22 +45,21 @@ pairs = [
     "AUD/USD",
     "CAD/JPY",
     "CAD/CHF",
-    # "CHF/JPY", 
     "EUR/AUD", 
     "EUR/CAD",
     "EUR/CHF", 
     "EUR/GBP", 
-    # "EUR/JPY",
-    # "EUR/USD",
     "GBP/AUD",
     "GBP/CAD",
     "GBP/CHF", 
-    # "GBP/JPY", 
     "GBP/USD", 
-    # "NZD/JPY",
-    # "USD/CAD", 
     "USD/CHF", 
     "USD/JPY", 
+    "CHF/JPY", 
+    "EUR/USD",
+    "EUR/JPY",
+    "GBP/JPY", 
+    "USD/CAD", 
 ]
 
 print("Available pairs:")
@@ -82,101 +84,170 @@ else:
 
 print(f"Tracking the following pairs: {pairs}")
 
-price_history = {pair: [] for pair in pairs}
+# Convert pairs to API symbol format (replace / with empty string)
+api_symbols = [p.replace("/", "") for p in pairs]
+
+# Data structures to hold historical data and latest prices
+price_history = {pair: pd.DataFrame() for pair in pairs}
+latest_prices = {pair: None for pair in pairs}
+
+# Lock for thread-safe updates
+data_lock = threading.Lock()
+
+def fetch_historical_data():
+    for symbol in pairs:
+        url = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=1min&outputsize=1000&dp=2&timezone=America/New_York&format=JSON"
+        response = requests.get(url)
+        raw = response.json()
+        if "values" not in raw:
+            print(f"No historical data for {symbol}")
+            continue
+        df = pd.DataFrame(raw["values"])
+        df["datetime"] = pd.to_datetime(df["datetime"])
+        df = df.sort_values("datetime")
+        df["close"] = df["close"].astype(float)
+        with data_lock:
+            price_history[symbol] = df
+            latest_prices[symbol] = df["close"].iloc[-1]
+
+def calculate_indicators(df):
+    if df.empty or len(df) < 26:
+        return None, None, None
+    
+    rsi_indicator = ta.momentum.RSIIndicator(df["close"], window=14)
+    rsi_values = rsi_indicator.rsi()
+    last_rsi = rsi_values.iloc[-1] if len(rsi_values) > 0 else None
+
+    ema_20 = df["close"].ewm(span=20, adjust=False).mean().iloc[-1] if len(df) >= 20 else None
+
+    ema_12 = df["close"].ewm(span=12, adjust=False).mean()
+    ema_26 = df["close"].ewm(span=26, adjust=False).mean()
+    macd = (ema_12 - ema_26).iloc[-1] if len(df) >= 26 else None
+
+    return last_rsi, ema_20, macd
+
+def generate_signal(price, last_rsi, ema_20, macd):
+    if last_rsi is None or ema_20 is None or macd is None:
+        return "HOLD"
+
+    rsi_status = "BUY" if last_rsi < 48 else "SELL" if last_rsi > 52 else "HOLD"
+    ema_status = "BUY" if price > ema_20 * 1.0001 else "SELL" if price < ema_20 * 0.9999 else "HOLD"
+    macd_status = "BUY" if macd >= 0 else "SELL"
+
+    statuses = [rsi_status, ema_status, macd_status]
+    buy_count = statuses.count("BUY")
+    sell_count = statuses.count("SELL")
+    hold_count = statuses.count("HOLD")
+
+    if buy_count >= 2:
+        return f"BUY (score={buy_count})"
+    elif sell_count >= 2:
+        return f"SELL (score={sell_count})"
+    else:
+        return f"HOLD (score={hold_count})"
+
+def print_signal(symbol, price, last_rsi, ema_20, macd, signal):
+    rsi_str = f"{last_rsi:.2f}" if last_rsi is not None else "N/A"
+    ema_str = f"{ema_20:.5f}" if ema_20 is not None else "N/A"
+    macd_str = f"{macd:.5f}" if macd is not None else "N/A"
+
+    rsi_status = "BUY" if last_rsi is not None and last_rsi < 48 else "SELL" if last_rsi is not None and last_rsi > 52 else "HOLD"
+    ema_status = "BUY" if ema_20 is not None and price > ema_20 * 1.0001 else "SELL" if ema_20 is not None and price < ema_20 * 0.9999 else "HOLD"
+    macd_status = "BUY" if macd is not None and macd >= 0 else "SELL" if macd is not None else "HOLD"
+
+    print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | Signal: {signal}")
+
+def process_new_price(symbol, new_price):
+    with data_lock:
+        # Update price history by appending new price with current time
+        df = price_history.get(symbol)
+        now = pd.Timestamp.now(tz=ZoneInfo("America/New_York"))
+        new_row = pd.DataFrame({"datetime": [now], "close": [new_price]})
+        if df is not None and not df.empty:
+            df = pd.concat([df, new_row], ignore_index=True)
+            # Keep only last 1000 rows to limit size
+            if len(df) > 1000:
+                df = df.iloc[-1000:]
+        else:
+            df = new_row
+        price_history[symbol] = df
+        latest_prices[symbol] = new_price
+
+        last_rsi, ema_20, macd = calculate_indicators(df)
+        signal = generate_signal(new_price, last_rsi, ema_20, macd)
+        print_signal(symbol, new_price, last_rsi, ema_20, macd, signal)
+
+        if signal.startswith("BUY") or signal.startswith("SELL"):
+            expiration_minutes = 5
+            send_trade_signal(symbol, signal.split()[0], expiration_minutes)
+
+def on_message(ws, message):
+    data = json.loads(message)
+    if "type" in data and data["type"] == "price":
+        symbol = data.get("symbol")
+        price = data.get("price")
+        if symbol and price:
+            # Convert symbol to pair format (e.g. AUDCAD -> AUD/CAD)
+            pair = None
+            for p in pairs:
+                if p.replace("/", "") == symbol:
+                    pair = p
+                    break
+            if pair:
+                try:
+                    price_float = float(price)
+                    process_new_price(pair, price_float)
+                except Exception as e:
+                    print(f"Error processing price update for {pair}: {e}")
+
+def on_error(ws, error):
+    print(f"WebSocket error: {error}")
+
+def on_close(ws, close_status_code, close_msg):
+    print("WebSocket closed, attempting to reconnect in 5 seconds...")
+    time.sleep(5)
+    start_websocket()
+
+def on_open(ws):
+    print("WebSocket connection opened")
+    # Subscribe to price updates for all symbols
+    params = {
+        "action": "subscribe",
+        "params": {
+            "symbols": ",".join(api_symbols),
+            "fields": ["price"]
+        }
+    }
+    ws.send(json.dumps(params))
+
+def run_websocket():
+    websocket.enableTrace(False)
+    ws = websocket.WebSocketApp(
+        "wss://ws.twelvedata.com/v1/quotes/price",
+        on_open=on_open,
+        on_message=on_message,
+        on_error=on_error,
+        on_close=on_close,
+    )
+    ws.run_forever()
+
+def start_websocket():
+    ws_thread = threading.Thread(target=run_websocket, daemon=True)
+    ws_thread.start()
 
 if __name__ == "__main__":
     try:
+        fetch_historical_data()
+        start_websocket()
+        last_rest_fetch = time.time()
         while True:
-            for symbol in list(pairs):
-                url = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=1min&outputsize=1000&dp=2&timezone=America/New_York&format=JSON"
-                response = requests.get(url)
-                raw = response.json()
-                if "values" not in raw:
-                    continue
-                df = pd.DataFrame(raw["values"])
-                df["datetime"] = pd.to_datetime(df["datetime"])
-                df = df.sort_values("datetime")
-                df["close"] = df["close"].astype(float)
-                price = df["close"].iloc[-1]
+            current_time = time.time()
+            # Refresh historical data every 20 minutes
+            if current_time - last_rest_fetch > 20 * 60:
+                fetch_historical_data()
+                last_rest_fetch = current_time
 
-                rsi_indicator = ta.momentum.RSIIndicator(df["close"], window=14)
-                rsi_values = rsi_indicator.rsi()
-                last_rsi = rsi_values.iloc[-1] if len(rsi_values) > 0 else None
-
-                ema_20 = df["close"].ewm(span=20, adjust=False).mean().iloc[-1] if len(df) >= 20 else None
-
-                ema_12 = df["close"].ewm(span=12, adjust=False).mean()
-                ema_26 = df["close"].ewm(span=26, adjust=False).mean()
-                macd = (ema_12 - ema_26).iloc[-1] if len(df) >= 26 else None
-
-                # Stochastic Oscillator
-                stoch = ta.momentum.StochasticOscillator(
-                    high=df["close"], low=df["close"], close=df["close"], window=14, smooth_window=3
-                )
-                stoch_k = stoch.stoch().iloc[-1] if len(df) > 0 else None
-
-                # Bollinger Bands
-                bb = ta.volatility.BollingerBands(close=df["close"], window=20, window_dev=2)
-                bb_high = bb.bollinger_hband().iloc[-1] if len(df) > 0 else None
-                bb_low = bb.bollinger_lband().iloc[-1] if len(df) > 0 else None
-
-                # Commodity Channel Index (CCI)
-                cci = ta.trend.CCIIndicator(high=df["close"], low=df["close"], close=df["close"], window=20)
-                last_cci = cci.cci().iloc[-1] if len(df) > 0 else None
-
-                # Average Directional Index (ADX)
-                adx = ta.trend.ADXIndicator(high=df["close"], low=df["close"], close=df["close"], window=14)
-                last_adx = adx.adx().iloc[-1] if len(df) > 0 else None
-
-                if last_rsi is None or ema_20 is None or macd is None:
-                    signal = "HOLD"
-                else:
-                    # Determine status for each indicator (even looser thresholds)
-                    rsi_status = "BUY" if last_rsi < 48 else "SELL" if last_rsi > 52 else "HOLD"
-                    ema_status = "BUY" if price > ema_20 * 1.0001 else "SELL" if price < ema_20 * 0.9999 else "HOLD"
-                    macd_status = "BUY" if macd >= 0 else "SELL"
-                    stoch_status = "BUY" if stoch_k is not None and stoch_k < 35 else "SELL" if stoch_k is not None and stoch_k > 65 else "HOLD"
-                    bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.0002 else "SELL" if bb_high is not None and price >= bb_high * 0.9998 else "HOLD"
-                    cci_status = "BUY" if last_cci is not None and last_cci < -70 else "SELL" if last_cci is not None and last_cci > 70 else "HOLD"
-                    adx_status = "BUY" if last_adx is not None and last_adx > 15 and macd > 0 else "SELL" if last_adx is not None and last_adx > 15 and macd < 0 else "HOLD"
-
-                    statuses = [rsi_status, ema_status, macd_status, stoch_status, bb_status, cci_status, adx_status]
-                    buy_count = statuses.count("BUY")
-                    sell_count = statuses.count("SELL")
-                    hold_count = statuses.count("HOLD")
-
-                    if buy_count >= 4:
-                        signal = f"BUY (score={buy_count})"
-                    elif sell_count >= 4:
-                        signal = f"SELL (score={sell_count})"
-                    else:
-                        signal = f"HOLD (score={hold_count})"
-
-                ema_str = f"{ema_20:.5f}" if ema_20 is not None else "N/A"
-                macd_str = f"{macd:.5f}" if macd is not None else "N/A"
-                rsi_str = f"{last_rsi:.2f}" if last_rsi is not None else "N/A"
-                stoch_str = f"{stoch_k:.2f}" if stoch_k is not None else "N/A"
-                bb_high_str = f"{bb_high:.5f}" if bb_high is not None else "N/A"
-                bb_low_str = f"{bb_low:.5f}" if bb_low is not None else "N/A"
-                cci_str = f"{last_cci:.2f}" if last_cci is not None else "N/A"
-                adx_str = f"{last_adx:.2f}" if last_adx is not None else "N/A"
-
-                print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | Stoch: {stoch_str} ({stoch_status}) | BB: Low {bb_low_str}, High {bb_high_str} ({bb_status}) | CCI: {cci_str} ({cci_status}) | ADX: {adx_str} ({adx_status}) | Signal: {signal} | Breakdown: BUY={buy_count}, SELL={sell_count}, HOLD={hold_count}")
-
-                if signal.startswith("BUY") or signal.startswith("SELL"):
-                    expiration_minutes = 5
-                    expiration_time = f"{expiration_minutes} minutes"
-                    trade_signal = {
-                        "pair": symbol,
-                        "action": signal,
-                        "expiration": expiration_time,
-                        "time": datetime.now(ZoneInfo("America/New_York")).strftime("%H:%M:%S %Z")
-                    }
-                    send_trade_signal(symbol, signal.split()[0], expiration_minutes)
-
-            # Wait until the start of the next minute
-            now = datetime.now()
-            seconds_to_wait = 60 - now.second
-            time.sleep(seconds_to_wait)
+            # Sleep a bit to reduce CPU usage; real-time updates come from websocket
+            time.sleep(1)
     except KeyboardInterrupt:
         print("Exiting...")
