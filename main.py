@@ -59,7 +59,14 @@ pairs = [
     "EUR/USD",
     "EUR/JPY",
     "GBP/JPY", 
-    "USD/CAD", 
+    "USD/CAD",
+    "BTC/USD",
+    "ETH/USD",
+    "LTC/USD",
+    "BNB/USD",
+    "SOL/USD",
+    "DOGE/USD",
+    "XRP/USD",
 ]
 
 print("Available pairs:")
@@ -99,6 +106,9 @@ def fetch_historical_data():
         url = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=1min&outputsize=1000&dp=2&timezone=America/New_York&format=JSON"
         response = requests.get(url)
         raw = response.json()
+        if "status" in raw and raw["status"] == "error":
+            print(f"API error for {symbol}: {raw.get('message', 'Unknown error')}")
+            continue
         if "values" not in raw:
             print(f"No historical data for {symbol}")
             continue
@@ -210,20 +220,22 @@ def on_close(ws, close_status_code, close_msg):
 
 def on_open(ws):
     print("WebSocket connection opened")
+
     # Subscribe to price updates for all symbols
-    params = {
+    subscribe_payload = {
         "action": "subscribe",
         "params": {
-            "symbols": ",".join(api_symbols),
+            "symbols": ",".join(pairs),
             "fields": ["price"]
         }
     }
-    ws.send(json.dumps(params))
+    ws.send(json.dumps(subscribe_payload))
+    print("Subscribed to live price updates")
 
 def run_websocket():
     websocket.enableTrace(False)
     ws = websocket.WebSocketApp(
-        "wss://ws.twelvedata.com/v1/quotes/price",
+        f"wss://ws.twelvedata.com/v1/quotes/price?apikey={API_KEY}",
         on_open=on_open,
         on_message=on_message,
         on_error=on_error,
