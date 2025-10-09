@@ -184,9 +184,9 @@ if __name__ == "__main__":
                         sell_count = statuses.count("SELL")
                         hold_count = statuses.count("HOLD")
 
-                        if buy_count >= 4 and sell_count <= 1 and (rsi_status == "BUY"):
+                        if buy_count >= 4 and sell_count <= 1 and (rsi_status == "BUY" or macd_status == "BUY"):
                             signal = f"BUY (score={buy_count})"
-                        elif sell_count >= 4 and buy_count <= 1 and (rsi_status == "SELL"):
+                        elif sell_count >= 4 and buy_count <= 1 and (rsi_status == "SELL" or macd_status == "SELL"):
                             signal = f"SELL (score={sell_count})"
                         else:
                             signal = f"HOLD (score={hold_count})"
