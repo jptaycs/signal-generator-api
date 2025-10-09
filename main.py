@@ -4,6 +4,7 @@ import time
 import pandas as pd
 import ta
 from zoneinfo import ZoneInfo
+import random
 
 API_KEY = "e0c7cd3a05a448bda0c737c99cc4790f"
 # Unli - e0c7cd3a05a448bda0c737c99cc4790f
@@ -18,22 +19,35 @@ API_KEY = "e0c7cd3a05a448bda0c737c99cc4790f"
 
 bot_token = "8119532010:AAHBTjlpUUgln260B1a2leDOu1oy6A2WnRo"
 chat_id = "6460198665"  # Replace with your Telegram user ID or channel ID
+
 def send_trade_signal(symbol, action, expiration_minutes):
     current_time = datetime.now().strftime("%H:%M")
     emoji = "🟩" if action.upper() == "BUY" else "🟥"
     message = (
         f"{symbol}\n"
-        # f"🕘 Expiration {expiration_minutes}M\n"
         f"⏺ Entry at {current_time}\n"
         f"{emoji} {action.upper()}"
     )
-    
+
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {"chat_id": chat_id, "text": message}
-    
-    response = requests.post(url, data=payload)
-    if response.status_code != 200:
-        print("Failed to send Telegram message:", response.text)
+
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(url, data=payload, timeout=10)
+            if response.status_code == 200:
+                print(f"✅ Telegram alert sent for {symbol}: {action}")
+                return True
+            else:
+                print(f"⚠️ Telegram error ({response.status_code}): {response.text}")
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️ Telegram connection issue (attempt {attempt+1}/{max_retries}): {e}")
+            time.sleep(2 ** attempt + random.random())  # exponential backoff
+
+    print(f"❌ Failed to send Telegram message for {symbol} after {max_retries} attempts.")
+    return False
+
 
 pairs = [
     "AUD/CAD", 
@@ -90,7 +104,7 @@ if __name__ == "__main__":
         while True:
             now = datetime.now()
             elapsed = (now - start_time).total_seconds()
-            if elapsed < 20 * 60:
+            if elapsed < 60 * 60:
                 for symbol in list(pairs):
                     url = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=1h&outputsize=1000&dp=2&timezone=America/New_York&format=JSON"
                     import random
@@ -148,7 +162,7 @@ if __name__ == "__main__":
                         signal = "HOLD"
                     else:
                         # Determine status for each indicator (even looser thresholds)
-                        rsi_status = "BUY" if last_rsi < 48 else "SELL" if last_rsi > 52 else "HOLD"
+                        rsi_status = "BUY" if last_rsi < 40 else "SELL" if last_rsi > 60 else "HOLD"
                         ema_status = "BUY" if price > ema_20 * 1.0001 else "SELL" if price < ema_20 * 0.9999 else "HOLD"
                         macd_status = "BUY" if macd >= 0 else "SELL"
                         stoch_status = "BUY" if stoch_k is not None and stoch_k < 35 else "SELL" if stoch_k is not None and stoch_k > 65 else "HOLD"
@@ -161,9 +175,9 @@ if __name__ == "__main__":
                         sell_count = statuses.count("SELL")
                         hold_count = statuses.count("HOLD")
 
-                        if buy_count >= 4:
+                        if buy_count >= 4 and sell_count <= 1 and (rsi_status == "BUY"):
                             signal = f"BUY (score={buy_count})"
-                        elif sell_count >= 4:
+                        elif sell_count >= 4 and buy_count <= 1 and (rsi_status == "SELL"):
                             signal = f"SELL (score={sell_count})"
                         else:
                             signal = f"HOLD (score={hold_count})"
@@ -191,7 +205,7 @@ if __name__ == "__main__":
                         send_trade_signal(symbol, signal.split()[0], expiration_minutes)
 
                 # Inside the 20-minute active window, sleep 5 minutes before next check
-                time.sleep(60)
+                time.sleep(61)
             else:
                 # After 20 minutes active, sleep until one hour from start_time
                 next_cycle = start_time + pd.Timedelta(minutes=30)
