@@ -158,6 +158,15 @@ if __name__ == "__main__":
                     adx = ta.trend.ADXIndicator(high=df["close"], low=df["close"], close=df["close"], window=14)
                     last_adx = adx.adx().iloc[-1] if len(df) > 0 else None
 
+                    # ATR-based volatility filtering
+                    atr_indicator = ta.volatility.AverageTrueRange(high=df["close"], low=df["close"], close=df["close"], window=14)
+                    last_atr = atr_indicator.average_true_range().iloc[-1] if len(df) > 0 else None
+                    volatility_threshold = 0.005  # 0.5% of price
+                    if last_atr is not None and price > 0:
+                        if (last_atr / price) > volatility_threshold:
+                            print(f"{symbol} | Volatility too high (ATR/Price = {(last_atr / price):.5f}), skipping signal generation.")
+                            continue
+
                     if last_rsi is None or ema_20 is None or macd is None:
                         signal = "HOLD"
                     else:
