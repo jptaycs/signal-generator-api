@@ -5,6 +5,39 @@ import pandas as pd
 import ta
 from zoneinfo import ZoneInfo
 import random
+import http.client
+import json
+def has_upcoming_news(currency, hours_ahead=2):
+    now = datetime.utcnow()
+    year, month, day = now.year, now.month, now.day
+    conn = http.client.HTTPSConnection("forex-factory-scraper1.p.rapidapi.com")
+    headers = {
+        'x-rapidapi-key': "82443e2586msh944f87d708095bfp14bdc9jsn68e056a59f6a",
+        'x-rapidapi-host': "forex-factory-scraper1.p.rapidapi.com"
+    }
+    try:
+        conn.request("GET", f"/get_calendar_details?year={year}&month={month}&day={day}&currency={currency}&event_name=ALL&timezone=GMT-05:00%20Eastern%20Time&time_format=24h", headers=headers)
+        res = conn.getresponse()
+        data = res.read()
+        events = json.loads(data.decode("utf-8"))
+        if isinstance(events, dict) and "data" in events:
+            for ev in events["data"]:
+                if ev.get("impact", "").lower() == "high":
+                    event_time = ev.get("time", "")
+                    if event_time:
+                        try:
+                            event_hour, event_min = map(int, event_time.split(":"))
+                            event_dt = now.replace(hour=event_hour, minute=event_min, second=0, microsecond=0)
+                            delta = (event_dt - now).total_seconds() / 3600
+                            if 0 <= delta <= hours_ahead:
+                                print(f"⚠️ Skipping {currency} trades due to upcoming HIGH-impact news in {delta:.1f}h: {ev.get('event_name')}")
+                                return True
+                        except Exception:
+                            continue
+        return False
+    except Exception as e:
+        print(f"⚠️ Failed to fetch news for {currency}: {e}")
+        return False
 
 API_KEY = "e0c7cd3a05a448bda0c737c99cc4790f"
 # Unli - e0c7cd3a05a448bda0c737c99cc4790f
@@ -106,6 +139,10 @@ if __name__ == "__main__":
             elapsed = (now - start_time).total_seconds()
             if elapsed < 60 * 60:
                 for symbol in list(pairs):
+                    base_currency = symbol.split("/")[0]
+                    quote_currency = symbol.split("/")[1]
+                    if has_upcoming_news(base_currency) or has_upcoming_news(quote_currency):
+                        continue
                     url = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=1h&outputsize=1000&dp=2&timezone=America/New_York&format=JSON"
                     import random
 
