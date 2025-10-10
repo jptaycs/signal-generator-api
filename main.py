@@ -7,37 +7,142 @@ from zoneinfo import ZoneInfo
 import random
 import http.client
 import json
-def has_upcoming_news(currency, hours_ahead=2):
-    now = datetime.utcnow()
-    year, month, day = now.year, now.month, now.day
+
+from datetime import datetime, timedelta, timezone
+import pytz
+
+# Track event notifications and active blocks
+notified_events = set()
+blocked_currencies = {}  # e.g., { "USD": datetime_until_unblocked }
+
+# Same timezone as your trading data
+NY_TZ = pytz.timezone("America/New_York")
+
+bot_token = "8119532010:AAHBTjlpUUgln260B1a2leDOu1oy6A2WnRo"
+chat_id = "6460198665"
+
+
+def send_telegram_message(text, markdown=True):
+    """Helper to send Telegram alerts."""
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text}
+    if markdown:
+        payload["parse_mode"] = "Markdown"
+    try:
+        requests.post(url, data=payload, timeout=10)
+    except Exception as e:
+        print(f"⚠️ Telegram send error: {e}")
+
+
+def show_news_status_summary():
+    """Prints and sends Telegram summary of currently blocked currencies."""
+    now = datetime.now(NY_TZ)
+    if not blocked_currencies:
+        summary = "✅ *All currencies are clear for trading.*"
+        print(summary)
+        send_telegram_message(summary)
+        return
+
+    summary_lines = ["🕒 *Active News Blocks:*"]
+    for currency, until in blocked_currencies.items():
+        remaining = (until - now).total_seconds() / 60
+        if remaining > 0:
+            summary_lines.append(f"• {currency}: blocked until {until.strftime('%H:%M')} NY ({remaining:.0f} min left)")
+    summary = "\n".join(summary_lines)
+    print(summary)
+    send_telegram_message(summary)
+
+
+def has_upcoming_news(currency, hours_ahead=2, block_hours_after=2):
+    """
+    Checks Forex Factory for any impact-level events in +/- 2 hours of current time.
+    Blocks trading and notifies via Telegram.
+    """
+
+    now_ny = datetime.now(NY_TZ)
+
+    # Check existing block
+    if currency in blocked_currencies:
+        if now_ny < blocked_currencies[currency]:
+            print(f"⏸ {currency} still blocked until {blocked_currencies[currency].strftime('%H:%M')} NY.")
+            return True
+        else:
+            print(f"✅ {currency} block expired — trading resumed.")
+            del blocked_currencies[currency]
+
+    # Prepare API request
+    year, month, day = now_ny.year, now_ny.month, now_ny.day
     conn = http.client.HTTPSConnection("forex-factory-scraper1.p.rapidapi.com")
     headers = {
         'x-rapidapi-key': "82443e2586msh944f87d708095bfp14bdc9jsn68e056a59f6a",
         'x-rapidapi-host': "forex-factory-scraper1.p.rapidapi.com"
     }
+
     try:
-        conn.request("GET", f"/get_calendar_details?year={year}&month={month}&day={day}&currency={currency}&event_name=ALL&timezone=GMT-05:00%20Eastern%20Time&time_format=24h", headers=headers)
+        conn.request(
+            "GET",
+            f"/get_calendar_details?year={year}&month={month}&day={day}"
+            f"&currency={currency}&event_name=ALL"
+            f"&timezone=GMT-05:00%20America/New_York&time_format=24h",
+            headers=headers
+        )
         res = conn.getresponse()
         data = res.read()
         events = json.loads(data.decode("utf-8"))
-        if isinstance(events, dict) and "data" in events:
-            for ev in events["data"]:
-                if ev.get("impact", "").lower() == "high":
-                    event_time = ev.get("time", "")
-                    if event_time:
-                        try:
-                            event_hour, event_min = map(int, event_time.split(":"))
-                            event_dt = now.replace(hour=event_hour, minute=event_min, second=0, microsecond=0)
-                            delta = (event_dt - now).total_seconds() / 3600
-                            if 0 <= delta <= hours_ahead:
-                                print(f"⚠️ Skipping {currency} trades due to upcoming HIGH-impact news in {delta:.1f}h: {ev.get('event_name')}")
-                                return True
-                        except Exception:
-                            continue
+
+        if not isinstance(events, dict) or "data" not in events:
+            return False
+
+        for ev in events["data"]:
+            impact = ev.get("impact", "").title().strip()
+            event_time = ev.get("time", "").strip()
+            event_name = ev.get("event_name", "Unknown Event")
+
+            if not event_time or "All Day" in event_time:
+                continue
+
+            try:
+                event_hour, event_min = map(int, event_time.split(":"))
+                event_dt = now_ny.replace(hour=event_hour, minute=event_min, second=0, microsecond=0)
+                delta_hours = (event_dt - now_ny).total_seconds() / 3600
+
+                # Ignore very old events
+                if delta_hours < -block_hours_after:
+                    continue
+
+                # If within window before or after
+                if -block_hours_after <= delta_hours <= hours_ahead:
+                    event_key = f"{currency}_{event_name}_{event_time}"
+                    if event_key not in notified_events:
+                        notified_events.add(event_key)
+                        unblock_time = event_dt + timedelta(hours=block_hours_after)
+                        blocked_currencies[currency] = unblock_time
+
+                        # Build notification
+                        message = (
+                            f"📰 *Forex News Alert*\n"
+                            f"Currency: {currency}\n"
+                            f"Event: {event_name}\n"
+                            f"Impact: {impact}\n"
+                            f"Time: {event_time} NY\n"
+                            f"⏳ Trading paused until {unblock_time.strftime('%H:%M')} NY time."
+                        )
+                        print(message)
+                        send_telegram_message(message)
+
+                        # Also refresh the summary
+                        show_news_status_summary()
+                        return True
+
+            except Exception:
+                continue
+
         return False
+
     except Exception as e:
         print(f"⚠️ Failed to fetch news for {currency}: {e}")
         return False
+
 
 API_KEY = "e0c7cd3a05a448bda0c737c99cc4790f"
 # Unli - e0c7cd3a05a448bda0c737c99cc4790f
@@ -101,7 +206,6 @@ pairs = [
     "GBP/CHF", 
     "GBP/JPY", 
     "GBP/USD", 
-    "NZD/JPY",
     "USD/CAD", 
     "USD/CHF", 
     "USD/JPY", 
@@ -212,9 +316,9 @@ if __name__ == "__main__":
                         sell_count = statuses.count("SELL")
                         hold_count = statuses.count("HOLD")
 
-                        if buy_count >= 4 and sell_count <= 1 and (rsi_status == "BUY"):
+                        if buy_count >= 4 and sell_count <= 1 and (rsi_status == "BUY" or macd_status == "BUY"):
                             signal = f"BUY (score={buy_count})"
-                        elif sell_count >= 4 and buy_count <= 1 and (rsi_status == "SELL"):
+                        elif sell_count >= 4 and buy_count <= 1 and (rsi_status == "SELL" or macd_status == "SELL"):
                             signal = f"SELL (score={sell_count})"
                         else:
                             signal = f"HOLD (score={hold_count})"
