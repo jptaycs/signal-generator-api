@@ -9,6 +9,9 @@ import http.client
 import json
 import pytz
 
+# Timezone for news and trading
+NY_TZ = pytz.timezone("America/New_York")
+
 # --- Manual or Auto Fundamental Data (Forecast vs Previous) ---
 # You can update these daily or automatically in future versions
 currency_fundamentals = {
@@ -24,8 +27,25 @@ currency_fundamentals = {
     "CNY": {"forecast": 8.5, "previous": 8.8},
 }
 
+# Add your news schedule with time (NY timezone)
+currency_news_schedule = {
+    "CHF": datetime.now(NY_TZ).replace(hour=3, minute=0, second=0, microsecond=0),
+    "EUR": datetime.now(NY_TZ).replace(hour=4, minute=0, second=0, microsecond=0),
+    "CAD": datetime.now(NY_TZ).replace(hour=8, minute=30, second=0, microsecond=0),
+    "USD": datetime.now(NY_TZ).replace(hour=9, minute=45, second=0, microsecond=0),
+    # Add others as needed
+}
+
 def get_fundamental_bias(currency):
-    """Returns BUY, SELL or NEUTRAL based on forecast vs previous."""
+    """Returns BUY, SELL, or NEUTRAL based on forecast vs previous and news time."""
+    now = datetime.now(NY_TZ)
+    news_time = currency_news_schedule.get(currency)
+
+    # If news is more than 1 hour past or future, bias is neutral
+    if news_time is None or abs((now - news_time).total_seconds()) > 3600:  # 3600s = 1h
+        return "NEUTRAL"
+
+    # Otherwise, use forecast vs previous
     data = currency_fundamentals.get(currency, {})
     forecast = data.get("forecast")
     previous = data.get("previous")
@@ -40,9 +60,6 @@ def get_fundamental_bias(currency):
 notified_events = set()
 blocked_currencies = {}  # e.g., { "USD": datetime_until_unblocked }
 
-
-# Same timezone as your trading data
-NY_TZ = pytz.timezone("America/New_York")
 
 bot_token = "8119532010:AAHBTjlpUUgln260B1a2leDOu1oy6A2WnRo"
 chat_id = "6460198665"
@@ -220,14 +237,14 @@ if __name__ == "__main__":
                     if last_rsi is None or ema_20 is None or macd is None:
                         signal = "HOLD"
                     else:
-                        # Determine status for each indicator (even looser thresholds)
-                        rsi_status = "BUY" if last_rsi < 40 else "SELL" if last_rsi > 60 else "HOLD"
-                        ema_status = "BUY" if price > ema_20 * 1.0001 else "SELL" if price < ema_20 * 0.9999 else "HOLD"
+                        # Loosen thresholds so indicators more easily produce BUY/SELL instead of HOLD
+                        rsi_status = "BUY" if last_rsi < 45 else "SELL" if last_rsi > 55 else "HOLD"
+                        ema_status = "BUY" if price > ema_20 * 1.0005 else "SELL" if price < ema_20 * 0.9995 else "HOLD"
                         macd_status = "BUY" if macd >= 0 else "SELL"
-                        stoch_status = "BUY" if stoch_k is not None and stoch_k < 35 else "SELL" if stoch_k is not None and stoch_k > 65 else "HOLD"
-                        bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.0002 else "SELL" if bb_high is not None and price >= bb_high * 0.9998 else "HOLD"
-                        cci_status = "BUY" if last_cci is not None and last_cci < -70 else "SELL" if last_cci is not None and last_cci > 70 else "HOLD"
-                        adx_status = "BUY" if last_adx is not None and last_adx > 15 and macd > 0 else "SELL" if last_adx is not None and last_adx > 15 and macd < 0 else "HOLD"
+                        stoch_status = "BUY" if stoch_k is not None and stoch_k < 50 else "SELL" if stoch_k is not None and stoch_k > 50 else "HOLD"
+                        bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.001 else "SELL" if bb_high is not None and price >= bb_high * 0.999 else "HOLD"
+                        cci_status = "BUY" if last_cci is not None and last_cci < -50 else "SELL" if last_cci is not None and last_cci > 50 else "HOLD"
+                        adx_status = "BUY" if last_adx is not None and last_adx > 10 and macd > 0 else "SELL" if last_adx is not None and last_adx > 10 and macd < 0 else "HOLD"
 
                         statuses = [rsi_status, ema_status, macd_status, stoch_status, bb_status, cci_status, adx_status]
                         buy_count = statuses.count("BUY")
