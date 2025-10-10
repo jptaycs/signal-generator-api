@@ -1,5 +1,5 @@
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import time
 import pandas as pd
 import ta
@@ -7,13 +7,39 @@ from zoneinfo import ZoneInfo
 import random
 import http.client
 import json
-
-from datetime import datetime, timedelta, timezone
 import pytz
 
-# Track event notifications and active blocks
+# --- Manual or Auto Fundamental Data (Forecast vs Previous) ---
+# You can update these daily or automatically in future versions
+currency_fundamentals = {
+    # Latest news data; forecast/previous as per instructions.
+    "USD": {"forecast": 54.1, "previous": 55.1},
+    "EUR": {"forecast": -2.4, "previous": -0.3},
+    "GBP": {"forecast": None, "previous": None},
+    "JPY": {"forecast": None, "previous": None},
+    "AUD": {"forecast": None, "previous": None},
+    "CAD": {"forecast": 2.8, "previous": -65.5},
+    "CHF": {"forecast": -37, "previous": -38},
+    "NZD": {"forecast": None, "previous": None},
+    "CNY": {"forecast": 8.5, "previous": 8.8},
+}
+
+def get_fundamental_bias(currency):
+    """Returns BUY, SELL or NEUTRAL based on forecast vs previous."""
+    data = currency_fundamentals.get(currency, {})
+    forecast = data.get("forecast")
+    previous = data.get("previous")
+    if forecast is None or previous is None:
+        return "NEUTRAL"
+    if forecast > previous:
+        return "BUY"
+    elif forecast < previous:
+        return "SELL"
+    return "NEUTRAL"
+
 notified_events = set()
 blocked_currencies = {}  # e.g., { "USD": datetime_until_unblocked }
+
 
 # Same timezone as your trading data
 NY_TZ = pytz.timezone("America/New_York")
@@ -29,7 +55,8 @@ def send_telegram_message(text, markdown=True):
     if markdown:
         payload["parse_mode"] = "Markdown"
     try:
-        requests.post(url, data=payload, timeout=10)
+        response = requests.post(url, data=payload, timeout=10)
+        print("Telegram response:", response.status_code, response.text)
     except Exception as e:
         print(f"⚠️ Telegram send error: {e}")
 
@@ -53,95 +80,7 @@ def show_news_status_summary():
     send_telegram_message(summary)
 
 
-def has_upcoming_news(currency, hours_ahead=2, block_hours_after=2):
-    """
-    Checks Forex Factory for any impact-level events in +/- 2 hours of current time.
-    Blocks trading and notifies via Telegram.
-    """
 
-    now_ny = datetime.now(NY_TZ)
-
-    # Check existing block
-    if currency in blocked_currencies:
-        if now_ny < blocked_currencies[currency]:
-            print(f"⏸ {currency} still blocked until {blocked_currencies[currency].strftime('%H:%M')} NY.")
-            return True
-        else:
-            print(f"✅ {currency} block expired — trading resumed.")
-            del blocked_currencies[currency]
-
-    # Prepare API request
-    year, month, day = now_ny.year, now_ny.month, now_ny.day
-    conn = http.client.HTTPSConnection("forex-factory-scraper1.p.rapidapi.com")
-    headers = {
-        'x-rapidapi-key': "82443e2586msh944f87d708095bfp14bdc9jsn68e056a59f6a",
-        'x-rapidapi-host': "forex-factory-scraper1.p.rapidapi.com"
-    }
-
-    try:
-        conn.request(
-            "GET",
-            f"/get_calendar_details?year={year}&month={month}&day={day}"
-            f"&currency={currency}&event_name=ALL"
-            f"&timezone=GMT-05:00%20America/New_York&time_format=24h",
-            headers=headers
-        )
-        res = conn.getresponse()
-        data = res.read()
-        events = json.loads(data.decode("utf-8"))
-
-        if not isinstance(events, dict) or "data" not in events:
-            return False
-
-        for ev in events["data"]:
-            impact = ev.get("impact", "").title().strip()
-            event_time = ev.get("time", "").strip()
-            event_name = ev.get("event_name", "Unknown Event")
-
-            if not event_time or "All Day" in event_time:
-                continue
-
-            try:
-                event_hour, event_min = map(int, event_time.split(":"))
-                event_dt = now_ny.replace(hour=event_hour, minute=event_min, second=0, microsecond=0)
-                delta_hours = (event_dt - now_ny).total_seconds() / 3600
-
-                # Ignore very old events
-                if delta_hours < -block_hours_after:
-                    continue
-
-                # If within window before or after
-                if -block_hours_after <= delta_hours <= hours_ahead:
-                    event_key = f"{currency}_{event_name}_{event_time}"
-                    if event_key not in notified_events:
-                        notified_events.add(event_key)
-                        unblock_time = event_dt + timedelta(hours=block_hours_after)
-                        blocked_currencies[currency] = unblock_time
-
-                        # Build notification
-                        message = (
-                            f"📰 *Forex News Alert*\n"
-                            f"Currency: {currency}\n"
-                            f"Event: {event_name}\n"
-                            f"Impact: {impact}\n"
-                            f"Time: {event_time} NY\n"
-                            f"⏳ Trading paused until {unblock_time.strftime('%H:%M')} NY time."
-                        )
-                        print(message)
-                        send_telegram_message(message)
-
-                        # Also refresh the summary
-                        show_news_status_summary()
-                        return True
-
-            except Exception:
-                continue
-
-        return False
-
-    except Exception as e:
-        print(f"⚠️ Failed to fetch news for {currency}: {e}")
-        return False
 
 
 API_KEY = "e0c7cd3a05a448bda0c737c99cc4790f"
@@ -211,27 +150,7 @@ pairs = [
     "USD/JPY", 
 ]
 
-print("Available pairs:")
-for i, p in enumerate(pairs, start=1):
-    print(f"{i}. {p}")
-# Ask user which pair to track by index, or all
-choice = input(f"What pair do you want to track? (0 for All, 1-{len(pairs)}): ")
-try:
-    choice = int(choice)
-except ValueError:
-    print(f"Invalid input. Please enter an integer between 0 and {len(pairs)}.")
-    exit(1)
-
-if choice == 0:
-    # Track all pairs
-    pass
-elif 1 <= choice <= len(pairs):
-    pairs = [pairs[choice - 1]]
-else:
-    print(f"Choice must be between 0 and {len(pairs)}.")
-    exit(1)
-
-print(f"Tracking the following pairs: {pairs}")
+print("Tracking all available pairs automatically.")
 
 price_history = {pair: [] for pair in pairs}
 
@@ -243,10 +162,9 @@ if __name__ == "__main__":
             elapsed = (now - start_time).total_seconds()
             if elapsed < 60 * 60:
                 for symbol in list(pairs):
-                    base_currency = symbol.split("/")[0]
-                    quote_currency = symbol.split("/")[1]
-                    if has_upcoming_news(base_currency) or has_upcoming_news(quote_currency):
-                        continue
+                    base_currency, quote_currency = symbol.split("/")
+                    base_bias = get_fundamental_bias(base_currency)
+                    quote_bias = get_fundamental_bias(quote_currency)
                     url = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=1h&outputsize=1000&dp=2&timezone=America/New_York&format=JSON"
                     import random
 
@@ -332,7 +250,15 @@ if __name__ == "__main__":
                     cci_str = f"{last_cci:.2f}" if last_cci is not None else "N/A"
                     adx_str = f"{last_adx:.2f}" if last_adx is not None else "N/A"
 
-                    print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | Stoch: {stoch_str} ({stoch_status}) | BB: Low {bb_low_str}, High {bb_high_str} ({bb_status}) | CCI: {cci_str} ({cci_status}) | ADX: {adx_str} ({adx_status}) | Signal: {signal} | Breakdown: BUY={buy_count}, SELL={sell_count}, HOLD={hold_count}")
+                    print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | Stoch: {stoch_str} ({stoch_status}) | BB: Low {bb_low_str}, High {bb_high_str} ({bb_status}) | CCI: {cci_str} ({cci_status}) | ADX: {adx_str} ({adx_status}) | Signal: {signal} | Breakdown: BUY={buy_count}, SELL={sell_count}, HOLD={hold_count} | Fundamental Bias: {base_currency}={base_bias}, {quote_currency}={quote_bias}")
+
+                    # --- Fundamental Bias Blocking ---
+                    if signal.startswith("BUY") and (base_bias == "SELL" or quote_bias == "BUY"):
+                        print(f"🚫 Blocked BUY signal for {symbol} due to fundamental bias ({base_currency}: {base_bias}, {quote_currency}: {quote_bias})")
+                        continue
+                    elif signal.startswith("SELL") and (base_bias == "BUY" or quote_bias == "SELL"):
+                        print(f"🚫 Blocked SELL signal for {symbol} due to fundamental bias ({base_currency}: {base_bias}, {quote_currency}: {quote_bias})")
+                        continue
 
                     if signal.startswith("BUY") or signal.startswith("SELL"):
                         expiration_minutes = 5
