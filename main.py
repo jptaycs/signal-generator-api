@@ -1,5 +1,5 @@
 import requests
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, time as dt_time
 import time
 import pandas as pd
 import ta
@@ -24,8 +24,66 @@ currency_fundamentals = {
     "CNY": {"forecast": 8.5, "previous": 8.8},
 }
 
+
+# --- Forex news schedule ---
+# All times are in NY timezone (America/New_York)
+forex_news_schedule = [
+    {"currency": "CHF", "event": "SECO Consumer Climate", "time": dt_time(3, 0)}, 
+    {"currency": "EUR", "event": "Italian Industrial Production m/m", "time": dt_time(4, 0)}, 
+    {"currency": "EUR", "event": "ECOFIN Meetings", "time": None},  # All day, block whole day
+    {"currency": "CAD", "event": "Employment Change", "time": dt_time(8, 30)},
+    {"currency": "CAD", "event": "Unemployment Rate", "time": dt_time(8, 30)},
+    {"currency": "USD", "event": "FOMC Member Goolsbee Speaks", "time": dt_time(9, 45)},
+    {"currency": "USD", "event": "Prelim UoM Consumer Sentiment", "time": dt_time(10, 0)},
+    {"currency": "USD", "event": "Prelim UoM Inflation Expectations", "time": dt_time(10, 0)},
+    {"currency": "USD", "event": "FOMC Member Musalem Speaks", "time": dt_time(13, 0)},
+]
+
+def is_currency_blocked(currency):
+    """
+    Returns True if current time is within ±1 hour of a scheduled news for the currency.
+    Returns False otherwise.
+    """
+    now = datetime.now(NY_TZ)
+    for news in forex_news_schedule:
+        if news["currency"] != currency:
+            continue
+        if news["time"] is None:
+            # All day event, block whole trading day
+            return True, "ALL DAY"
+        news_dt = now.replace(hour=news["time"].hour, minute=news["time"].minute, second=0, microsecond=0)
+        delta_hours = (news_dt - now).total_seconds() / 3600
+        if -1 <= delta_hours <= 1:
+            return True, news["event"]
+    return False, None
+
+
 def get_fundamental_bias(currency):
-    """Returns BUY, SELL or NEUTRAL based on forecast vs previous."""
+    """
+    Returns BUY, SELL, or NEUTRAL.
+    - Within ±1 hour of scheduled news → follow forecast vs previous.
+    - Outside ±1 hour → NEUTRAL.
+    """
+    now = datetime.now(NY_TZ)
+    in_news_window = False
+
+    for news in forex_news_schedule:
+        if news["currency"] != currency:
+            continue
+        if news["time"] is None:
+            # All-day event → always use forecast vs previous
+            in_news_window = True
+            break
+        news_dt = now.replace(hour=news["time"].hour, minute=news["time"].minute, second=0, microsecond=0)
+        delta_hours = (news_dt - now).total_seconds() / 3600
+        if -1 <= delta_hours <= 1:
+            in_news_window = True
+            break
+
+    if not in_news_window:
+        return "NEUTRAL"
+
+    # Inside ±1 hour of news → follow forecast vs previous
     data = currency_fundamentals.get(currency, {})
     forecast = data.get("forecast")
     previous = data.get("previous")
@@ -36,6 +94,10 @@ def get_fundamental_bias(currency):
     elif forecast < previous:
         return "SELL"
     return "NEUTRAL"
+
+
+
+
 
 notified_events = set()
 blocked_currencies = {}  # e.g., { "USD": datetime_until_unblocked }
@@ -161,11 +223,14 @@ if __name__ == "__main__":
             now = datetime.now()
             elapsed = (now - start_time).total_seconds()
             if elapsed < 60 * 60:
+
                 for symbol in list(pairs):
                     base_currency, quote_currency = symbol.split("/")
+
+                    # Always compute fundamental bias; use forecast vs previous inside ±1 hour, NEUTRAL otherwise
                     base_bias = get_fundamental_bias(base_currency)
                     quote_bias = get_fundamental_bias(quote_currency)
-                    url = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=1h&outputsize=1000&dp=2&timezone=America/New_York&format=JSON"
+                    url = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=1h&outputsize=1000&dp=1&timezone=America/New_York&format=JSON"
                     import random
 
                     for attempt in range(5):  # up to 5 retries
