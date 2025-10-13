@@ -15,37 +15,49 @@ NY_TZ = pytz.timezone("America/New_York")
 # --- Manual or Auto Fundamental Data (Forecast vs Previous) ---
 # You can update these daily or automatically in future versions
 currency_fundamentals = {
-    # Latest news data; forecast/previous as per instructions.
-    "USD": {"forecast": 54.1, "previous": 55.1},
-    "EUR": {"forecast": -2.4, "previous": -0.3},
-    "GBP": {"forecast": None, "previous": None},
-    "JPY": {"forecast": None, "previous": None},
+    "EUR": {"forecast": 0.2, "previous": -0.6},
+    "GBP": {"forecast": -0.3, "previous": 0.0},
+    "USD": {"forecast": None, "previous": None},
+    "CAD": {"forecast": None, "previous": None},
+    "JPY": {"forecast": 1.3, "previous": None},
     "AUD": {"forecast": None, "previous": None},
-    "CAD": {"forecast": 2.8, "previous": -65.5},
-    "CHF": {"forecast": -37, "previous": -38},
+    "CHF": {"forecast": None, "previous": None},
     "NZD": {"forecast": None, "previous": None},
-    "CNY": {"forecast": 8.5, "previous": 8.8},
+    "CNY": {"forecast": None, "previous": None},
 }
 
 # Add your news schedule with time (NY timezone)
 currency_news_schedule = {
-    "CHF": datetime.now(NY_TZ).replace(hour=3, minute=0, second=0, microsecond=0),
-    "EUR": datetime.now(NY_TZ).replace(hour=4, minute=0, second=0, microsecond=0),
-    "CAD": datetime.now(NY_TZ).replace(hour=8, minute=30, second=0, microsecond=0),
-    "USD": datetime.now(NY_TZ).replace(hour=9, minute=45, second=0, microsecond=0),
-    # Add others as needed
+    "EUR": [datetime.now(NY_TZ).replace(hour=2, minute=0, second=0, microsecond=0)],
+    "GBP": [
+        datetime.now(NY_TZ).replace(hour=7, minute=5, second=0, microsecond=0),
+        datetime.now(NY_TZ).replace(hour=9, minute=30, second=0, microsecond=0),
+        datetime.now(NY_TZ).replace(hour=15, minute=10, second=0, microsecond=0),
+        datetime.now(NY_TZ).replace(hour=19, minute=1, second=0, microsecond=0),
+    ],
+    "USD": [datetime.now(NY_TZ).replace(hour=12, minute=55, second=0, microsecond=0)],
+    "JPY": [datetime.now(NY_TZ).replace(hour=19, minute=50, second=0, microsecond=0)],
+    "AUD": [datetime.now(NY_TZ).replace(hour=20, minute=30, second=0, microsecond=0)],
+    "CAD": [datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)],
+    "ALL": [datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)],
 }
 
 def get_fundamental_bias(currency):
     """Returns BUY, SELL, or NEUTRAL based on forecast vs previous and news time."""
     now = datetime.now(NY_TZ)
-    news_time = currency_news_schedule.get(currency)
+    news_times = currency_news_schedule.get(currency, [])
 
-    # If news is more than 1 hour past or future, bias is neutral
-    if news_time is None or abs((now - news_time).total_seconds()) > 3600:  # 3600s = 1h
-        return "NEUTRAL"
+    # Determine if any news is within ±1 hour
+    in_window = False
+    for news_time in news_times:
+        if abs((now - news_time).total_seconds()) <= 3600:  # ±1 hour
+            in_window = True
+            break
 
-    # Otherwise, use forecast vs previous
+    if not in_window:
+        return "NEUTRAL"  # Outside ±1 hour window
+
+    # Inside window, use forecast vs previous
     data = currency_fundamentals.get(currency, {})
     forecast = data.get("forecast")
     previous = data.get("previous")
@@ -234,29 +246,109 @@ if __name__ == "__main__":
                     adx = ta.trend.ADXIndicator(high=df["close"], low=df["close"], close=df["close"], window=14)
                     last_adx = adx.adx().iloc[-1] if len(df) > 0 else None
 
+                    # Average True Range (ATR)
+                    atr = ta.volatility.AverageTrueRange(high=df["close"], low=df["close"], close=df["close"], window=14)
+                    last_atr = atr.average_true_range().iloc[-1] if len(df) > 0 else None
+
+                    # Parabolic SAR
+                    psar = ta.trend.PSARIndicator(high=df["close"], low=df["close"], close=df["close"], step=0.02, max_step=0.2)
+                    psar_value = psar.psar().iloc[-1] if len(df) > 0 else None
+
                     if last_rsi is None or ema_20 is None or macd is None:
                         signal = "HOLD"
                     else:
-                        # Loosen thresholds so indicators more easily produce BUY/SELL instead of HOLD
-                        rsi_status = "BUY" if last_rsi < 45 else "SELL" if last_rsi > 55 else "HOLD"
-                        ema_status = "BUY" if price > ema_20 * 1.0005 else "SELL" if price < ema_20 * 0.9995 else "HOLD"
-                        macd_status = "BUY" if macd >= 0 else "SELL"
-                        stoch_status = "BUY" if stoch_k is not None and stoch_k < 50 else "SELL" if stoch_k is not None and stoch_k > 50 else "HOLD"
-                        bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.001 else "SELL" if bb_high is not None and price >= bb_high * 0.999 else "HOLD"
-                        cci_status = "BUY" if last_cci is not None and last_cci < -50 else "SELL" if last_cci is not None and last_cci > 50 else "HOLD"
-                        adx_status = "BUY" if last_adx is not None and last_adx > 10 and macd > 0 else "SELL" if last_adx is not None and last_adx > 10 and macd < 0 else "HOLD"
+                        # --- Stricter indicator thresholds for 60-min expiration ---
+                        rsi_status = "BUY" if last_rsi < 35 else "SELL" if last_rsi > 65 else "HOLD"
+                        ema_status = "BUY" if price > ema_20 * 1.001 else "SELL" if price < ema_20 * 0.999 else "HOLD"
+                        macd_status = "BUY" if macd > 0.0005 else "SELL" if macd < -0.0005 else "HOLD"
+                        stoch_status = "BUY" if stoch_k is not None and stoch_k < 35 else "SELL" if stoch_k is not None and stoch_k > 65 else "HOLD"
+                        bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.0005 else "SELL" if bb_high is not None and price >= bb_high * 0.9995 else "HOLD"
+                        cci_status = "BUY" if last_cci is not None and last_cci < -100 else "SELL" if last_cci is not None and last_cci > 100 else "HOLD"
+                        adx_status = "BUY" if last_adx is not None and last_adx > 20 and macd > 0 else "SELL" if last_adx is not None and last_adx > 20 and macd < 0 else "HOLD"
 
-                        statuses = [rsi_status, ema_status, macd_status, stoch_status, bb_status, cci_status, adx_status]
-                        buy_count = statuses.count("BUY")
-                        sell_count = statuses.count("SELL")
-                        hold_count = statuses.count("HOLD")
+                        # ATR
+                        atr_status = "HOLD"
+                        if last_atr is not None:
+                            atr_threshold = price * 0.0005  # dynamic threshold for volatility
+                            atr_status = "BUY" if last_atr > atr_threshold else "HOLD"
 
-                        if buy_count >= 4 and sell_count <= 1 and (rsi_status == "BUY" or macd_status == "BUY"):
-                            signal = f"BUY (score={buy_count})"
-                        elif sell_count >= 4 and buy_count <= 1 and (rsi_status == "SELL" or macd_status == "SELL"):
-                            signal = f"SELL (score={sell_count})"
+                        # PSAR
+                        psar_status = "BUY" if psar_value is not None and psar_value < price else "SELL" if psar_value is not None and psar_value > price else "HOLD"
+
+                        # --- Multi-timeframe confirmation and weighted scoring ---
+                        def get_higher_timeframe_bias(symbol):
+                            """Returns BUY/SELL/NEUTRAL bias for the 4h timeframe using 50 EMA trend."""
+                            url_htf = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=4h&outputsize=100&dp=2&timezone=America/New_York&format=JSON"
+                            try:
+                                resp_htf = requests.get(url_htf, timeout=10)
+                                resp_htf.raise_for_status()
+                                raw_htf = resp_htf.json()
+                                if "values" not in raw_htf:
+                                    return "NEUTRAL"
+                                df_htf = pd.DataFrame(raw_htf["values"])
+                                df_htf["datetime"] = pd.to_datetime(df_htf["datetime"])
+                                df_htf = df_htf.sort_values("datetime")
+                                df_htf["close"] = df_htf["close"].astype(float)
+                                if len(df_htf) < 50:
+                                    return "NEUTRAL"
+                                ema_50 = df_htf["close"].ewm(span=50, adjust=False).mean().iloc[-1]
+                                price_htf = df_htf["close"].iloc[-1]
+                                if price_htf > ema_50 * 1.0005:
+                                    return "BUY"
+                                elif price_htf < ema_50 * 0.9995:
+                                    return "SELL"
+                                else:
+                                    return "NEUTRAL"
+                            except Exception as ex:
+                                print(f"⚠️ Higher timeframe fetch error for {symbol}: {ex}")
+                                return "NEUTRAL"
+
+                        # Indicator weights
+                        indicator_weights = {
+                            "rsi": 1,
+                            "ema": 2,
+                            "macd": 2,
+                            "stoch": 1,
+                            "bb": 2,
+                            "cci": 1,
+                            "adx": 3,
+                            "atr": 2,
+                            "psar": 2,
+                        }
+                        # Statuses mapping
+                        indicator_statuses = {
+                            "rsi": rsi_status,
+                            "ema": ema_status,
+                            "macd": macd_status,
+                            "stoch": stoch_status,
+                            "bb": bb_status,
+                            "cci": cci_status,
+                            "adx": adx_status,
+                            "atr": atr_status,
+                            "psar": psar_status,
+                        }
+                        # Weighted scoring
+                        buy_score = 0
+                        sell_score = 0
+                        hold_score = 0
+                        for ind, status in indicator_statuses.items():
+                            w = indicator_weights[ind]
+                            if status == "BUY":
+                                buy_score += w
+                            elif status == "SELL":
+                                sell_score += w
+                            else:
+                                hold_score += w
+
+                        higher_tf_bias = get_higher_timeframe_bias(symbol)
+
+                        # Final signal logic: require weighted score and higher timeframe agreement
+                        if buy_score >= 12 and higher_tf_bias == "BUY":
+                            signal = f"BUY (score={buy_score}, HTF={higher_tf_bias})"
+                        elif sell_score >= 12 and higher_tf_bias == "SELL":
+                            signal = f"SELL (score={sell_score}, HTF={higher_tf_bias})"
                         else:
-                            signal = f"HOLD (score={hold_count})"
+                            signal = f"HOLD (score={hold_score}, HTF={higher_tf_bias})"
 
                     ema_str = f"{ema_20:.5f}" if ema_20 is not None else "N/A"
                     macd_str = f"{macd:.5f}" if macd is not None else "N/A"
@@ -266,8 +358,10 @@ if __name__ == "__main__":
                     bb_low_str = f"{bb_low:.5f}" if bb_low is not None else "N/A"
                     cci_str = f"{last_cci:.2f}" if last_cci is not None else "N/A"
                     adx_str = f"{last_adx:.2f}" if last_adx is not None else "N/A"
+                    atr_str = f"{last_atr:.5f}" if last_atr is not None else "N/A"
+                    psar_str = f"{psar_value:.5f}" if psar_value is not None else "N/A"
 
-                    print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | Stoch: {stoch_str} ({stoch_status}) | BB: Low {bb_low_str}, High {bb_high_str} ({bb_status}) | CCI: {cci_str} ({cci_status}) | ADX: {adx_str} ({adx_status}) | Signal: {signal} | Breakdown: BUY={buy_count}, SELL={sell_count}, HOLD={hold_count} | Fundamental Bias: {base_currency}={base_bias}, {quote_currency}={quote_bias}")
+                    print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | Stoch: {stoch_str} ({stoch_status}) | BB: Low {bb_low_str}, High {bb_high_str} ({bb_status}) | CCI: {cci_str} ({cci_status}) | ADX: {adx_str} ({adx_status}) | ATR: {atr_str} ({atr_status}) | PSAR: {psar_str} ({psar_status}) | Signal: {signal} | Weighted: BUY={buy_score}, SELL={sell_score}, HOLD={hold_score} | Fundamental Bias: {base_currency}={base_bias}, {quote_currency}={quote_bias}")
 
                     # --- Fundamental Bias Blocking ---
                     if signal.startswith("BUY") and (base_bias == "SELL" or quote_bias == "BUY"):
