@@ -278,7 +278,7 @@ if __name__ == "__main__":
                         rsi_status = "BUY" if last_rsi < 35 else "SELL" if last_rsi > 65 else "HOLD"
                         ema_status = "BUY" if price > ema_20 * 1.001 else "SELL" if price < ema_20 * 0.999 else "HOLD"
                         macd_status = "BUY" if macd > 0.0005 else "SELL" if macd < -0.0005 else "HOLD"
-                        stoch_status = "BUY" if stoch_k is not None and stoch_k < 30 else "SELL" if stoch_k is not None and stoch_k > 70 else "HOLD"
+                        stoch_status = "BUY" if stoch_k is not None and stoch_k < 35 else "SELL" if stoch_k is not None and stoch_k > 65 else "HOLD"
                         bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.0005 else "SELL" if bb_high is not None and price >= bb_high * 0.9995 else "HOLD"
                         cci_status = "BUY" if last_cci is not None and last_cci < -100 else "SELL" if last_cci is not None and last_cci > 100 else "HOLD"
                         adx_status = "BUY" if last_adx is not None and last_adx > 20 and macd > 0 else "SELL" if last_adx is not None and last_adx > 20 and macd < 0 else "HOLD"
@@ -297,9 +297,9 @@ if __name__ == "__main__":
                         sell_count = statuses.count("SELL")
                         hold_count = statuses.count("HOLD")
 
-                        if buy_count >= 5 and sell_count <= 2 and (rsi_status == "BUY" or macd_status == "BUY"):
+                        if buy_count >= 5 and sell_count <= 2 and ((rsi_status == "BUY" or macd_status == "BUY") and adx_status == "BUY"):
                             signal = f"BUY (score={buy_count})"
-                        elif sell_count >= 5 and buy_count <= 2 and (rsi_status == "SELL" or macd_status == "SELL"):
+                        elif sell_count >= 5 and buy_count <= 2 and ((rsi_status == "SELL" or macd_status == "SELL") and adx_status == "SELL"):
                             signal = f"SELL (score={sell_count})"
                         else:
                             signal = f"HOLD (score={hold_count})"
