@@ -274,35 +274,105 @@ if __name__ == "__main__":
                     if last_rsi is None or ema_20 is None or macd is None:
                         signal = "HOLD"
                     else:
-                        # --- Stricter indicator thresholds for 60-min expiration ---
-                        rsi_status = "BUY" if last_rsi < 35 else "SELL" if last_rsi > 65 else "HOLD"
-                        ema_status = "BUY" if price > ema_20 * 1.001 else "SELL" if price < ema_20 * 0.999 else "HOLD"
-                        macd_status = "BUY" if macd > 0.0005 else "SELL" if macd < -0.0005 else "HOLD"
-                        stoch_status = "BUY" if stoch_k is not None and stoch_k < 35 else "SELL" if stoch_k is not None and stoch_k > 65 else "HOLD"
-                        bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.0005 else "SELL" if bb_high is not None and price >= bb_high * 0.9995 else "HOLD"
-                        cci_status = "BUY" if last_cci is not None and last_cci < -100 else "SELL" if last_cci is not None and last_cci > 100 else "HOLD"
-                        adx_status = "BUY" if last_adx is not None and last_adx > 20 and macd > 0 else "SELL" if last_adx is not None and last_adx > 20 and macd < 0 else "HOLD"
+                        # --- Slightly looser indicator thresholds (reduce HOLDs) for 60-min expiration ---
+                        # Loosened thresholds so more indicators produce BUY/SELL instead of HOLD
+                        rsi_status = "BUY" if last_rsi < 45 else "SELL" if last_rsi > 55 else "HOLD"
+                        ema_status = "BUY" if price > ema_20 * 1.0005 else "SELL" if price < ema_20 * 0.9995 else "HOLD"
+                        macd_status = "BUY" if macd > 0.00015 else "SELL" if macd < -0.00015 else "HOLD"
+                        stoch_status = "BUY" if stoch_k is not None and stoch_k < 40 else "SELL" if stoch_k is not None and stoch_k > 60 else "HOLD"
+                        bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.0008 else "SELL" if bb_high is not None and price >= bb_high * 0.9992 else "HOLD"
+                        cci_status = "BUY" if last_cci is not None and last_cci < -80 else "SELL" if last_cci is not None and last_cci > 80 else "HOLD"
+                        adx_status = "BUY" if last_adx is not None and last_adx > 18 and macd > 0 else "SELL" if last_adx is not None and last_adx > 18 and macd < 0 else "HOLD"
 
-                        # ATR
+                        # ATR: compare to short-term average ATR to detect abnormally high volatility
+                        atr_series = atr.average_true_range() if hasattr(atr, 'average_true_range') else None
+                        avg_atr = None
+                        if atr_series is not None and len(atr_series) >= 5:
+                            avg_atr = atr_series.iloc[-5:].mean()
                         atr_status = "HOLD"
-                        if last_atr is not None:
-                            atr_threshold = price * 0.0005  # dynamic threshold for volatility
-                            atr_status = "BUY" if last_atr > atr_threshold else "HOLD"
+                        if last_atr is not None and avg_atr is not None:
+                            # mark as BUY (volatility present) only if ATR noticeably above recent average
+                            atr_status = "BUY" if last_atr > avg_atr * 1.05 else "HOLD"
 
                         # PSAR
                         psar_status = "BUY" if psar_value is not None and psar_value < price else "SELL" if psar_value is not None and psar_value > price else "HOLD"
 
-                        statuses = [rsi_status, ema_status, macd_status, stoch_status, bb_status, cci_status, adx_status, atr_status, psar_status]
-                        buy_count = statuses.count("BUY")
-                        sell_count = statuses.count("SELL")
-                        hold_count = statuses.count("HOLD")
+                        # --- Multi-timeframe confirmation (4h) ---
+                        def get_higher_timeframe_bias(symbol):
+                            """Returns BUY/SELL/NEUTRAL bias for the 4h timeframe using 50 EMA trend."""
+                            url_htf = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=4h&outputsize=100&dp=2&timezone=America/New_York&format=JSON"
+                            try:
+                                resp_htf = requests.get(url_htf, timeout=10)
+                                resp_htf.raise_for_status()
+                                raw_htf = resp_htf.json()
+                                if "values" not in raw_htf:
+                                    return "NEUTRAL"
+                                df_htf = pd.DataFrame(raw_htf["values"])
+                                df_htf["datetime"] = pd.to_datetime(df_htf["datetime"])
+                                df_htf = df_htf.sort_values("datetime")
+                                df_htf["close"] = df_htf["close"].astype(float)
+                                if len(df_htf) < 50:
+                                    return "NEUTRAL"
+                                ema_50 = df_htf["close"].ewm(span=50, adjust=False).mean().iloc[-1]
+                                price_htf = df_htf["close"].iloc[-1]
+                                if price_htf > ema_50 * 1.0008:
+                                    return "BUY"
+                                elif price_htf < ema_50 * 0.9992:
+                                    return "SELL"
+                                else:
+                                    return "NEUTRAL"
+                            except Exception as ex:
+                                print(f"⚠️ Higher timeframe fetch error for {symbol}: {ex}")
+                                return "NEUTRAL"
 
-                        if buy_count >= 5 and sell_count <= 2 and ((rsi_status == "BUY" or macd_status == "BUY") and adx_status == "BUY"):
-                            signal = f"BUY (score={buy_count})"
-                        elif sell_count >= 5 and buy_count <= 2 and ((rsi_status == "SELL" or macd_status == "SELL") and adx_status == "SELL"):
-                            signal = f"SELL (score={sell_count})"
+                        # Indicator weights (unchanged)
+                        indicator_weights = {
+                            "rsi": 1,
+                            "ema": 2,
+                            "macd": 2,
+                            "stoch": 1,
+                            "bb": 2,
+                            "cci": 1,
+                            "adx": 3,
+                            "atr": 2,
+                            "psar": 2,
+                        }
+
+                        indicator_statuses = {
+                            "rsi": rsi_status,
+                            "ema": ema_status,
+                            "macd": macd_status,
+                            "stoch": stoch_status,
+                            "bb": bb_status,
+                            "cci": cci_status,
+                            "adx": adx_status,
+                            "atr": atr_status,
+                            "psar": psar_status,
+                        }
+
+                        # Weighted scoring
+                        buy_score = 0
+                        sell_score = 0
+                        hold_score = 0
+                        for ind, status in indicator_statuses.items():
+                            w = indicator_weights[ind]
+                            if status == "BUY":
+                                buy_score += w
+                            elif status == "SELL":
+                                sell_score += w
+                            else:
+                                hold_score += w
+
+                        higher_tf_bias = get_higher_timeframe_bias(symbol)
+
+                        # Final signal logic: reduced thresholds so not too strict
+                        # Require reasonable weighted score (>=10) and avoid contradiction with HTF
+                        if buy_score >= 10 and higher_tf_bias != "SELL":
+                            signal = f"BUY (score={buy_score}, HTF={higher_tf_bias})"
+                        elif sell_score >= 10 and higher_tf_bias != "BUY":
+                            signal = f"SELL (score={sell_score}, HTF={higher_tf_bias})"
                         else:
-                            signal = f"HOLD (score={hold_count})"
+                            signal = f"HOLD (score={hold_score}, HTF={higher_tf_bias})"
 
                     ema_str = f"{ema_20:.5f}" if ema_20 is not None else "N/A"
                     macd_str = f"{macd:.5f}" if macd is not None else "N/A"
@@ -315,7 +385,7 @@ if __name__ == "__main__":
                     atr_str = f"{last_atr:.5f}" if last_atr is not None else "N/A"
                     psar_str = f"{psar_value:.5f}" if psar_value is not None else "N/A"
 
-                    print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | Stoch: {stoch_str} ({stoch_status}) | BB: Low {bb_low_str}, High {bb_high_str} ({bb_status}) | CCI: {cci_str} ({cci_status}) | ADX: {adx_str} ({adx_status}) | ATR: {atr_str} ({atr_status}) | PSAR: {psar_str} ({psar_status}) | Signal: {signal} | Breakdown: BUY={buy_count}, SELL={sell_count}, HOLD={hold_count} | Fundamental Bias: {base_currency}={base_bias}, {quote_currency}={quote_bias}")
+                    print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | Stoch: {stoch_str} ({stoch_status}) | BB: Low {bb_low_str}, High {bb_high_str} ({bb_status}) | CCI: {cci_str} ({cci_status}) | ADX: {adx_str} ({adx_status}) | ATR: {atr_str} ({atr_status}) | PSAR: {psar_str} ({psar_status}) | Signal: {signal} | Weighted: BUY={buy_score}, SELL={sell_score}, HOLD={hold_score} | Fundamental Bias: {base_currency}={base_bias}, {quote_currency}={quote_bias}")
 
                     # --- Fundamental Bias Blocking ---
                     if signal.startswith("BUY") and (base_bias == "SELL" or quote_bias == "BUY"):
