@@ -263,26 +263,43 @@ if __name__ == "__main__":
                     adx = ta.trend.ADXIndicator(high=df["close"], low=df["close"], close=df["close"], window=14)
                     last_adx = adx.adx().iloc[-1] if len(df) > 0 else None
 
+                    # Average True Range (ATR)
+                    atr = ta.volatility.AverageTrueRange(high=df["close"], low=df["close"], close=df["close"], window=14)
+                    last_atr = atr.average_true_range().iloc[-1] if len(df) > 0 else None
+
+                    # Parabolic SAR
+                    psar = ta.trend.PSARIndicator(high=df["close"], low=df["close"], close=df["close"], step=0.02, max_step=0.2)
+                    psar_value = psar.psar().iloc[-1] if len(df) > 0 else None
+
                     if last_rsi is None or ema_20 is None or macd is None:
                         signal = "HOLD"
                     else:
-                        # Loosen thresholds so indicators more easily produce BUY/SELL instead of HOLD
-                        rsi_status = "BUY" if last_rsi < 45 else "SELL" if last_rsi > 55 else "HOLD"
-                        ema_status = "BUY" if price > ema_20 * 1.0005 else "SELL" if price < ema_20 * 0.9995 else "HOLD"
-                        macd_status = "BUY" if macd >= 0 else "SELL"
-                        stoch_status = "BUY" if stoch_k is not None and stoch_k < 50 else "SELL" if stoch_k is not None and stoch_k > 50 else "HOLD"
-                        bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.001 else "SELL" if bb_high is not None and price >= bb_high * 0.999 else "HOLD"
-                        cci_status = "BUY" if last_cci is not None and last_cci < -50 else "SELL" if last_cci is not None and last_cci > 50 else "HOLD"
-                        adx_status = "BUY" if last_adx is not None and last_adx > 10 and macd > 0 else "SELL" if last_adx is not None and last_adx > 10 and macd < 0 else "HOLD"
+                        # --- Stricter indicator thresholds for 60-min expiration ---
+                        rsi_status = "BUY" if last_rsi < 35 else "SELL" if last_rsi > 65 else "HOLD"
+                        ema_status = "BUY" if price > ema_20 * 1.001 else "SELL" if price < ema_20 * 0.999 else "HOLD"
+                        macd_status = "BUY" if macd > 0.0005 else "SELL" if macd < -0.0005 else "HOLD"
+                        stoch_status = "BUY" if stoch_k is not None and stoch_k < 30 else "SELL" if stoch_k is not None and stoch_k > 70 else "HOLD"
+                        bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.0005 else "SELL" if bb_high is not None and price >= bb_high * 0.9995 else "HOLD"
+                        cci_status = "BUY" if last_cci is not None and last_cci < -100 else "SELL" if last_cci is not None and last_cci > 100 else "HOLD"
+                        adx_status = "BUY" if last_adx is not None and last_adx > 20 and macd > 0 else "SELL" if last_adx is not None and last_adx > 20 and macd < 0 else "HOLD"
 
-                        statuses = [rsi_status, ema_status, macd_status, stoch_status, bb_status, cci_status, adx_status]
+                        # ATR
+                        atr_status = "HOLD"
+                        if last_atr is not None:
+                            atr_threshold = price * 0.0005  # dynamic threshold for volatility
+                            atr_status = "BUY" if last_atr > atr_threshold else "HOLD"
+
+                        # PSAR
+                        psar_status = "BUY" if psar_value is not None and psar_value < price else "SELL" if psar_value is not None and psar_value > price else "HOLD"
+
+                        statuses = [rsi_status, ema_status, macd_status, stoch_status, bb_status, cci_status, adx_status, atr_status, psar_status]
                         buy_count = statuses.count("BUY")
                         sell_count = statuses.count("SELL")
                         hold_count = statuses.count("HOLD")
 
-                        if buy_count >= 4 and sell_count <= 1 and (rsi_status == "BUY" or macd_status == "BUY"):
+                        if buy_count >= 5 and sell_count <= 2 and (rsi_status == "BUY" or macd_status == "BUY"):
                             signal = f"BUY (score={buy_count})"
-                        elif sell_count >= 4 and buy_count <= 1 and (rsi_status == "SELL" or macd_status == "SELL"):
+                        elif sell_count >= 5 and buy_count <= 2 and (rsi_status == "SELL" or macd_status == "SELL"):
                             signal = f"SELL (score={sell_count})"
                         else:
                             signal = f"HOLD (score={hold_count})"
@@ -295,8 +312,10 @@ if __name__ == "__main__":
                     bb_low_str = f"{bb_low:.5f}" if bb_low is not None else "N/A"
                     cci_str = f"{last_cci:.2f}" if last_cci is not None else "N/A"
                     adx_str = f"{last_adx:.2f}" if last_adx is not None else "N/A"
+                    atr_str = f"{last_atr:.5f}" if last_atr is not None else "N/A"
+                    psar_str = f"{psar_value:.5f}" if psar_value is not None else "N/A"
 
-                    print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | Stoch: {stoch_str} ({stoch_status}) | BB: Low {bb_low_str}, High {bb_high_str} ({bb_status}) | CCI: {cci_str} ({cci_status}) | ADX: {adx_str} ({adx_status}) | Signal: {signal} | Breakdown: BUY={buy_count}, SELL={sell_count}, HOLD={hold_count} | Fundamental Bias: {base_currency}={base_bias}, {quote_currency}={quote_bias}")
+                    print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | Stoch: {stoch_str} ({stoch_status}) | BB: Low {bb_low_str}, High {bb_high_str} ({bb_status}) | CCI: {cci_str} ({cci_status}) | ADX: {adx_str} ({adx_status}) | ATR: {atr_str} ({atr_status}) | PSAR: {psar_str} ({psar_status}) | Signal: {signal} | Breakdown: BUY={buy_count}, SELL={sell_count}, HOLD={hold_count} | Fundamental Bias: {base_currency}={base_bias}, {quote_currency}={quote_bias}")
 
                     # --- Fundamental Bias Blocking ---
                     if signal.startswith("BUY") and (base_bias == "SELL" or quote_bias == "BUY"):
