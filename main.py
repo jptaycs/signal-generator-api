@@ -29,23 +29,52 @@ currency_fundamentals = {
 
 # Add your news schedule with time (NY timezone)
 currency_news_schedule = {
-    "CHF": datetime.now(NY_TZ).replace(hour=3, minute=0, second=0, microsecond=0),
-    "EUR": datetime.now(NY_TZ).replace(hour=4, minute=0, second=0, microsecond=0),
-    "CAD": datetime.now(NY_TZ).replace(hour=8, minute=30, second=0, microsecond=0),
-    "USD": datetime.now(NY_TZ).replace(hour=9, minute=45, second=0, microsecond=0),
-    # Add others as needed
+    "NZD": [
+        datetime.now(NY_TZ).replace(hour=5, minute=30, second=0, microsecond=0),
+        datetime.now(NY_TZ).replace(hour=5, minute=49, second=0, microsecond=0),
+    ],
+    "JPY": [
+        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)  # All Day Bank Holiday
+    ],
+    "CNY": [
+        datetime.now(NY_TZ).replace(hour=10, minute=56, second=0, microsecond=0),
+        datetime.now(NY_TZ).replace(hour=10, minute=59, second=0, microsecond=0),
+        datetime.now(NY_TZ).replace(hour=14, minute=0, second=0, microsecond=0),
+    ],
+    "EUR": [
+        datetime.now(NY_TZ).replace(hour=14, minute=0, second=0, microsecond=0)
+    ],
+    "GBP": [
+        datetime.now(NY_TZ).replace(hour=19, minute=5, second=0, microsecond=0),
+        datetime.now(NY_TZ).replace(hour=21, minute=30, second=0, microsecond=0)
+    ],
+    "CAD": [
+        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)  # All Day Bank Holiday
+    ],
+    "USD": [
+        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)  # All Day Bank Holiday
+    ],
+    "ALL": [
+        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)  # IMF Meetings
+    ]
 }
 
 def get_fundamental_bias(currency):
     """Returns BUY, SELL, or NEUTRAL based on forecast vs previous and news time."""
     now = datetime.now(NY_TZ)
-    news_time = currency_news_schedule.get(currency)
+    news_times = currency_news_schedule.get(currency, [])
 
-    # If news is more than 1 hour past or future, bias is neutral
-    if news_time is None or abs((now - news_time).total_seconds()) > 3600:  # 3600s = 1h
-        return "NEUTRAL"
+    # Determine if any news is within ±1 hour
+    in_window = False
+    for news_time in news_times:
+        if abs((now - news_time).total_seconds()) <= 3600:  # ±1 hour
+            in_window = True
+            break
 
-    # Otherwise, use forecast vs previous
+    if not in_window:
+        return "NEUTRAL"  # Outside ±1 hour window
+
+    # Inside window, use forecast vs previous
     data = currency_fundamentals.get(currency, {})
     forecast = data.get("forecast")
     previous = data.get("previous")
