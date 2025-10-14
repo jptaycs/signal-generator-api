@@ -193,7 +193,7 @@ pairs = [
     "GBP/USD", 
     "USD/CAD", 
     "USD/CHF", 
-    "USD/JPY", 
+    # "USD/JPY", 
 ]
 
 print("Tracking all available pairs automatically.")
