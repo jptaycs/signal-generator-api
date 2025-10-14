@@ -211,7 +211,7 @@ if __name__ == "__main__":
                     base_currency, quote_currency = symbol.split("/")
                     base_bias = get_fundamental_bias(base_currency)
                     quote_bias = get_fundamental_bias(quote_currency)
-                    url = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=1h&outputsize=1000&dp=2&timezone=America/New_York&format=JSON"
+                    url = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=1min&outputsize=1000&dp=8&timezone=America/New_York&format=JSON"
                     import random
 
                     for attempt in range(5):  # up to 5 retries
@@ -283,9 +283,9 @@ if __name__ == "__main__":
                         hold_count = statuses.count("HOLD")
 
                         if buy_count >= 4 and sell_count <= 1 and (rsi_status == "BUY" or macd_status == "BUY"):
-                            signal = f"BUY (score={buy_count})"
+                            signal = f"SELL (score={buy_count})"
                         elif sell_count >= 4 and buy_count <= 1 and (rsi_status == "SELL" or macd_status == "SELL"):
-                            signal = f"SELL (score={sell_count})"
+                            signal = f"BUY (score={sell_count})"
                         else:
                             signal = f"HOLD (score={hold_count})"
 
