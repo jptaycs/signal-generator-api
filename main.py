@@ -233,6 +233,8 @@ if __name__ == "__main__":
                     df = df.sort_values("datetime")
                     df["close"] = df["close"].astype(float)
                     price = df["close"].iloc[-1]
+                    # Get previous 1-minute candle price (or fallback to current if only one row)
+                    prev_price = df["close"].iloc[-2] if len(df) > 1 else price
 
                     rsi_indicator = ta.momentum.RSIIndicator(df["close"], window=14)
                     rsi_values = rsi_indicator.rsi()
@@ -304,6 +306,14 @@ if __name__ == "__main__":
                         continue
                     elif signal.startswith("SELL") and (base_bias == "BUY" or quote_bias == "SELL"):
                         print(f"🚫 Blocked SELL signal for {symbol} due to fundamental bias ({base_currency}: {base_bias}, {quote_currency}: {quote_bias})")
+                        continue
+
+                    # --- Skip trade if price movement does not confirm direction ---
+                    if signal.startswith("BUY") and price <= prev_price:
+                        print(f"⚠️ Skipped BUY for {symbol}: current price ({price:.5f}) not higher than previous ({prev_price:.5f})")
+                        continue
+                    elif signal.startswith("SELL") and price >= prev_price:
+                        print(f"⚠️ Skipped SELL for {symbol}: current price ({price:.5f}) not lower than previous ({prev_price:.5f})")
                         continue
 
                     if signal.startswith("BUY") or signal.startswith("SELL"):
