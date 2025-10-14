@@ -15,47 +15,47 @@ NY_TZ = pytz.timezone("America/New_York")
 # --- Manual or Auto Fundamental Data (Forecast vs Previous) ---
 # You can update these daily or automatically in future versions
 currency_fundamentals = {
-    # Latest news data; forecast/previous as per instructions.
-    "USD": {"forecast": 54.1, "previous": 55.1},
-    "EUR": {"forecast": -2.4, "previous": -0.3},
-    "GBP": {"forecast": None, "previous": None},
-    "JPY": {"forecast": None, "previous": None},
-    "AUD": {"forecast": None, "previous": None},
-    "CAD": {"forecast": 2.8, "previous": -65.5},
-    "CHF": {"forecast": -37, "previous": -38},
-    "NZD": {"forecast": None, "previous": None},
-    "CNY": {"forecast": 8.5, "previous": 8.8},
+    "EUR": {"forecast": 0.2, "previous": 0.2},       # German WPI m/m
+    "GBP": {"forecast": -0.3, "previous": 0.0},      # CB Leading Index m/m
+    "JPY": {"forecast": 1.3, "previous": None},       # M2 Money Stock y/y
+    "AUD": {"forecast": 4.0, "previous": None},       # NAB Business Confidence
+    "USD": {"forecast": None, "previous": None},      # Bank Holiday
+    "CAD": {"forecast": None, "previous": None},      # Bank Holiday
+    "CHF": {"forecast": None, "previous": None},      # No data today
+    "NZD": {"forecast": None, "previous": None},      # No data today
+    "CNY": {"forecast": None, "previous": None},      # No data today
 }
 
 # Add your news schedule with time (NY timezone)
 currency_news_schedule = {
-    "NZD": [
-        datetime.now(NY_TZ).replace(hour=5, minute=30, second=0, microsecond=0),
-        datetime.now(NY_TZ).replace(hour=5, minute=49, second=0, microsecond=0),
-    ],
-    "JPY": [
-        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)  # All Day Bank Holiday
-    ],
-    "CNY": [
-        datetime.now(NY_TZ).replace(hour=10, minute=56, second=0, microsecond=0),
-        datetime.now(NY_TZ).replace(hour=10, minute=59, second=0, microsecond=0),
-        datetime.now(NY_TZ).replace(hour=14, minute=0, second=0, microsecond=0),
-    ],
     "EUR": [
-        datetime.now(NY_TZ).replace(hour=14, minute=0, second=0, microsecond=0)
+        datetime.now(NY_TZ).replace(hour=2, minute=0, second=0, microsecond=0),   # German WPI m/m
     ],
     "GBP": [
-        datetime.now(NY_TZ).replace(hour=19, minute=5, second=0, microsecond=0),
-        datetime.now(NY_TZ).replace(hour=21, minute=30, second=0, microsecond=0)
+        datetime.now(NY_TZ).replace(hour=7, minute=5, second=0, microsecond=0),   # MPC Member Greene Speaks
+        datetime.now(NY_TZ).replace(hour=9, minute=30, second=0, microsecond=0),  # CB Leading Index m/m
+        datetime.now(NY_TZ).replace(hour=15, minute=10, second=0, microsecond=0), # MPC Member Mann Speaks
+        datetime.now(NY_TZ).replace(hour=19, minute=1, second=0, microsecond=0),  # BRC Retail Sales Monitor y/y
     ],
-    "CAD": [
-        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)  # All Day Bank Holiday
+    "JPY": [
+        datetime.now(NY_TZ).replace(hour=19, minute=50, second=0, microsecond=0), # M2 Money Stock y/y
+    ],
+    "AUD": [
+        datetime.now(NY_TZ).replace(hour=20, minute=30, second=0, microsecond=0), # Monetary Policy Meeting Minutes
+        datetime.now(NY_TZ).replace(hour=20, minute=31, second=0, microsecond=0), # NAB Business Confidence
     ],
     "USD": [
-        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)  # All Day Bank Holiday
+        datetime.now(NY_TZ).replace(hour=12, minute=55, second=0, microsecond=0), # FOMC Member Paulson Speaks
+        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0),   # Bank Holiday
     ],
+    "CAD": [
+        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0),   # Bank Holiday
+    ],
+    "CHF": [],
+    "NZD": [],
+    "CNY": [],
     "ALL": [
-        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)  # IMF Meetings
+        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0),   # IMF Meetings
     ]
 }
 
