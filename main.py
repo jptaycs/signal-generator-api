@@ -181,9 +181,9 @@ if __name__ == "__main__":
                     if last_adx is not None and last_adx < 20:
                         signal = "HOLD"
                     else:
-                        if buy_count >= 3:
+                        if buy_count >= 4:
                             signal = f"BUY (score={buy_count})"
-                        elif sell_count >= 3:
+                        elif sell_count >= 4:
                             signal = f"SELL (score={sell_count})"
                         else:
                             signal = f"HOLD (score={hold_count})"
