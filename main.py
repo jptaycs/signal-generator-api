@@ -15,47 +15,57 @@ NY_TZ = pytz.timezone("America/New_York")
 # --- Manual or Auto Fundamental Data (Forecast vs Previous) ---
 # You can update these daily or automatically in future versions
 currency_fundamentals = {
-    "EUR": {"forecast": 0.2, "previous": 0.2},       # German WPI m/m
-    "GBP": {"forecast": -0.3, "previous": 0.0},      # CB Leading Index m/m
-    "JPY": {"forecast": 1.3, "previous": None},       # M2 Money Stock y/y
-    "AUD": {"forecast": 4.0, "previous": None},       # NAB Business Confidence
-    "USD": {"forecast": None, "previous": None},      # Bank Holiday
-    "CAD": {"forecast": None, "previous": None},      # Bank Holiday
-    "CHF": {"forecast": None, "previous": None},      # No data today
-    "NZD": {"forecast": None, "previous": None},      # No data today
-    "CNY": {"forecast": None, "previous": None},      # No data today
+    "JPY": {"forecast": -1.2, "previous": -1.2},        # Revised Industrial Production m/m
+    "EUR": {"forecast": -1.6, "previous": 0.3},         # Industrial Production m/m
+    "GBP": {"forecast": None, "previous": None},         # MPC Speeches only
+    "CNY": {"forecast": 8.5, "previous": 8.8},          # M2 Money Supply y/y
+    "CAD": {"forecast": -1.5, "previous": 2.5},         # Manufacturing Sales m/m
+    "USD": {"forecast": -1.8, "previous": -8.7},        # Empire State Manufacturing Index
+    "AUD": {"forecast": 20.5, "previous": -5.4},        # Employment Change
+    "NZD": {"forecast": 0.3, "previous": None},          # FPI m/m
+    "CHF": {"forecast": None, "previous": None},         # No data today
 }
 
 # Add your news schedule with time (NY timezone)
 currency_news_schedule = {
+    "JPY": [
+        datetime.now(NY_TZ).replace(hour=0, minute=30, second=0, microsecond=0),   # Revised Industrial Production
+        datetime.now(NY_TZ).replace(hour=19, minute=50, second=0, microsecond=0),  # Core Machinery Orders
+    ],
     "EUR": [
-        datetime.now(NY_TZ).replace(hour=2, minute=0, second=0, microsecond=0),   # German WPI m/m
+        datetime.now(NY_TZ).replace(hour=2, minute=45, second=0, microsecond=0),   # French Final CPI
+        datetime.now(NY_TZ).replace(hour=5, minute=0, second=0, microsecond=0),    # Industrial Production
     ],
     "GBP": [
-        datetime.now(NY_TZ).replace(hour=7, minute=5, second=0, microsecond=0),   # MPC Member Greene Speaks
-        datetime.now(NY_TZ).replace(hour=9, minute=30, second=0, microsecond=0),  # CB Leading Index m/m
-        datetime.now(NY_TZ).replace(hour=15, minute=10, second=0, microsecond=0), # MPC Member Mann Speaks
-        datetime.now(NY_TZ).replace(hour=19, minute=1, second=0, microsecond=0),  # BRC Retail Sales Monitor y/y
+        datetime.now(NY_TZ).replace(hour=4, minute=0, second=0, microsecond=0),    # MPC Ramsden
+        datetime.now(NY_TZ).replace(hour=11, minute=0, second=0, microsecond=0),   # MPC Breeden
+        datetime.now(NY_TZ).replace(hour=11, minute=45, second=0, microsecond=0),  # MPC Breeden 2
     ],
-    "JPY": [
-        datetime.now(NY_TZ).replace(hour=19, minute=50, second=0, microsecond=0), # M2 Money Stock y/y
-    ],
-    "AUD": [
-        datetime.now(NY_TZ).replace(hour=20, minute=30, second=0, microsecond=0), # Monetary Policy Meeting Minutes
-        datetime.now(NY_TZ).replace(hour=20, minute=31, second=0, microsecond=0), # NAB Business Confidence
-    ],
-    "USD": [
-        datetime.now(NY_TZ).replace(hour=12, minute=55, second=0, microsecond=0), # FOMC Member Paulson Speaks
-        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0),   # Bank Holiday
+    "CNY": [
+        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0),    # Tentative - New Loans / M2
     ],
     "CAD": [
-        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0),   # Bank Holiday
+        datetime.now(NY_TZ).replace(hour=8, minute=30, second=0, microsecond=0),   # Manufacturing Sales / Wholesale
     ],
-    "CHF": [],
-    "NZD": [],
-    "CNY": [],
+    "USD": [
+        datetime.now(NY_TZ).replace(hour=8, minute=30, second=0, microsecond=0),   # Empire State
+        datetime.now(NY_TZ).replace(hour=9, minute=30, second=0, microsecond=0),   # FOMC Miran
+        datetime.now(NY_TZ).replace(hour=12, minute=30, second=0, microsecond=0),  # FOMC Miran
+        datetime.now(NY_TZ).replace(hour=13, minute=0, second=0, microsecond=0),   # FOMC Waller
+        datetime.now(NY_TZ).replace(hour=14, minute=0, second=0, microsecond=0),   # Beige Book
+        datetime.now(NY_TZ).replace(hour=14, minute=30, second=0, microsecond=0),  # FOMC Schmid
+        datetime.now(NY_TZ).replace(hour=16, minute=30, second=0, microsecond=0),  # API Bulletin
+    ],
+    "AUD": [
+        datetime.now(NY_TZ).replace(hour=15, minute=45, second=0, microsecond=0),  # RBA Gov Bullock
+        datetime.now(NY_TZ).replace(hour=17, minute=50, second=0, microsecond=0),  # RBA Assist Gov Kent
+        datetime.now(NY_TZ).replace(hour=20, minute=30, second=0, microsecond=0),  # Employment Change / Unemployment Rate
+    ],
+    "NZD": [
+        datetime.now(NY_TZ).replace(hour=17, minute=45, second=0, microsecond=0),  # FPI m/m
+    ],
     "ALL": [
-        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0),   # IMF Meetings
+        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0),    # IMF Meetings
     ]
 }
 
