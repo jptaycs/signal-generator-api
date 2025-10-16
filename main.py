@@ -15,49 +15,57 @@ NY_TZ = pytz.timezone("America/New_York")
 # --- Manual or Auto Fundamental Data (Forecast vs Previous) ---
 # You can update these daily or automatically in future versions
 currency_fundamentals = {
-    # Latest news data; forecast/previous as per instructions.
-    "USD": {"forecast": 54.1, "previous": 55.1},
-    "EUR": {"forecast": -2.4, "previous": -0.3},
-    "GBP": {"forecast": None, "previous": None},
-    "JPY": {"forecast": None, "previous": None},
-    "AUD": {"forecast": None, "previous": None},
-    "CAD": {"forecast": 2.8, "previous": -65.5},
-    "CHF": {"forecast": -37, "previous": -38},
-    "NZD": {"forecast": None, "previous": None},
-    "CNY": {"forecast": 8.5, "previous": 8.8},
+    "JPY": {"forecast": -0.2, "previous": 0.5},          # Tertiary Industry Activity m/m
+    "GBP": {"forecast": 0.2, "previous": -1.3},          # Manufacturing Production m/m (strong improvement)
+    "CHF": {"forecast": None, "previous": None},          # SECO Economic Forecasts (qualitative only)
+    "EUR": {"forecast": 6.9, "previous": 5.3},           # Trade Balance
+    "CAD": {"forecast": 258, "previous": 246},           # Housing Starts
+    "USD": {"forecast": 33, "previous": 32},             # NAHB Housing Market Index
+    "NZD": {"forecast": None, "previous": None},          # No data
+    "AUD": {"forecast": None, "previous": None},          # No data
+    "CNY": {"forecast": None, "previous": None},          # No data
 }
+
+
 
 # Add your news schedule with time (NY timezone)
 currency_news_schedule = {
-    "NZD": [
-        datetime.now(NY_TZ).replace(hour=5, minute=30, second=0, microsecond=0),
-        datetime.now(NY_TZ).replace(hour=5, minute=49, second=0, microsecond=0),
-    ],
     "JPY": [
-        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)  # All Day Bank Holiday
-    ],
-    "CNY": [
-        datetime.now(NY_TZ).replace(hour=10, minute=56, second=0, microsecond=0),
-        datetime.now(NY_TZ).replace(hour=10, minute=59, second=0, microsecond=0),
-        datetime.now(NY_TZ).replace(hour=14, minute=0, second=0, microsecond=0),
-    ],
-    "EUR": [
-        datetime.now(NY_TZ).replace(hour=14, minute=0, second=0, microsecond=0)
+        datetime.now(NY_TZ).replace(hour=0, minute=30, second=0, microsecond=0),  # Tertiary Industry Activity
     ],
     "GBP": [
-        datetime.now(NY_TZ).replace(hour=19, minute=5, second=0, microsecond=0),
-        datetime.now(NY_TZ).replace(hour=21, minute=30, second=0, microsecond=0)
+        datetime.now(NY_TZ).replace(hour=2, minute=0, second=0, microsecond=0),   # GDP, Construction, etc.
+        datetime.now(NY_TZ).replace(hour=4, minute=30, second=0, microsecond=0),  # BOE Credit Conditions
+        datetime.now(NY_TZ).replace(hour=9, minute=0, second=0, microsecond=0),   # MPC Mann Speaks
+        datetime.now(NY_TZ).replace(hour=10, minute=45, second=0, microsecond=0), # MPC Mann again
+        datetime.now(NY_TZ).replace(hour=14, minute=30, second=0, microsecond=0), # MPC Greene Speaks
+    ],
+    "CHF": [
+        datetime.now(NY_TZ).replace(hour=3, minute=0, second=0, microsecond=0),   # SECO Forecasts
+    ],
+    "EUR": [
+        datetime.now(NY_TZ).replace(hour=5, minute=0, second=0, microsecond=0),   # Trade Balance
+        datetime.now(NY_TZ).replace(hour=12, minute=0, second=0, microsecond=0),  # ECB Lagarde Speaks
     ],
     "CAD": [
-        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)  # All Day Bank Holiday
+        datetime.now(NY_TZ).replace(hour=8, minute=15, second=0, microsecond=0),  # Housing Starts
+        datetime.now(NY_TZ).replace(hour=13, minute=30, second=0, microsecond=0), # BOC Macklem Speaks
     ],
     "USD": [
-        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)  # All Day Bank Holiday
+        datetime.now(NY_TZ).replace(hour=8, minute=30, second=0, microsecond=0),  # Philly Fed Index
+        datetime.now(NY_TZ).replace(hour=9, minute=0, second=0, microsecond=0),   # Multiple FOMC Speeches
+        datetime.now(NY_TZ).replace(hour=10, minute=0, second=0, microsecond=0),  # Bowman Speaks
+        datetime.now(NY_TZ).replace(hour=10, minute=30, second=0, microsecond=0), # NatGas Storage
+        datetime.now(NY_TZ).replace(hour=12, minute=0, second=0, microsecond=0),  # Crude Oil Inventories
+        datetime.now(NY_TZ).replace(hour=16, minute=15, second=0, microsecond=0), # Miran Speaks
+        datetime.now(NY_TZ).replace(hour=18, minute=0, second=0, microsecond=0),  # Kashkari Speaks
     ],
     "ALL": [
-        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0)  # IMF Meetings
-    ]
+        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0),   # IMF Meetings
+    ],
 }
+
+
 
 def get_fundamental_bias(currency):
     """Returns BUY, SELL, or NEUTRAL based on forecast vs previous and news time."""
@@ -206,12 +214,12 @@ if __name__ == "__main__":
         while True:
             now = datetime.now()
             elapsed = (now - start_time).total_seconds()
-            if elapsed < 60 * 60:
+            if elapsed < 15 * 60:
                 for symbol in list(pairs):
                     base_currency, quote_currency = symbol.split("/")
                     base_bias = get_fundamental_bias(base_currency)
                     quote_bias = get_fundamental_bias(quote_currency)
-                    url = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=1h&outputsize=1000&dp=2&timezone=America/New_York&format=JSON"
+                    url = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=1min&outputsize=1000&dp=5&timezone=America/New_York&format=JSON"
                     import random
 
                     for attempt in range(5):  # up to 5 retries
@@ -300,7 +308,7 @@ if __name__ == "__main__":
                         # --- Multi-timeframe confirmation (4h) ---
                         def get_higher_timeframe_bias(symbol):
                             """Returns BUY/SELL/NEUTRAL bias for the 4h timeframe using 50 EMA trend."""
-                            url_htf = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=4h&outputsize=100&dp=2&timezone=America/New_York&format=JSON"
+                            url_htf = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=1min&outputsize=1000&dp=5&timezone=America/New_York&format=JSON"
                             try:
                                 resp_htf = requests.get(url_htf, timeout=10)
                                 resp_htf.raise_for_status()
@@ -327,7 +335,7 @@ if __name__ == "__main__":
 
                         # Indicator weights (unchanged)
                         indicator_weights = {
-                            "rsi": 1,
+                            "rsi": 3,
                             "ema": 2,
                             "macd": 2,
                             "stoch": 1,
@@ -367,9 +375,9 @@ if __name__ == "__main__":
 
                         # Final signal logic: reduced thresholds so not too strict
                         # Require reasonable weighted score (>=10) and avoid contradiction with HTF
-                        if buy_score >= 10 and higher_tf_bias != "SELL":
+                        if buy_score >= 11 and higher_tf_bias != "SELL":
                             signal = f"BUY (score={buy_score}, HTF={higher_tf_bias})"
-                        elif sell_score >= 10 and higher_tf_bias != "BUY":
+                        elif sell_score >= 11 and higher_tf_bias != "BUY":
                             signal = f"SELL (score={sell_score}, HTF={higher_tf_bias})"
                         else:
                             signal = f"HOLD (score={hold_score}, HTF={higher_tf_bias})"
