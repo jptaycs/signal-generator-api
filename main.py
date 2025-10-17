@@ -15,15 +15,15 @@ NY_TZ = pytz.timezone("America/New_York")
 # --- Manual or Auto Fundamental Data (Forecast vs Previous) ---
 # You can update these daily or automatically in future versions
 currency_fundamentals = {
-    "JPY": {"forecast": -0.2, "previous": 0.5},          # Tertiary Industry Activity m/m
-    "GBP": {"forecast": 0.2, "previous": -1.3},          # Manufacturing Production m/m (strong improvement)
-    "CHF": {"forecast": None, "previous": None},          # SECO Economic Forecasts (qualitative only)
-    "EUR": {"forecast": 6.9, "previous": 5.3},           # Trade Balance
-    "CAD": {"forecast": 258, "previous": 246},           # Housing Starts
-    "USD": {"forecast": 33, "previous": 32},             # NAHB Housing Market Index
-    "NZD": {"forecast": None, "previous": None},          # No data
-    "AUD": {"forecast": None, "previous": None},          # No data
-    "CNY": {"forecast": None, "previous": None},          # No data
+    "JPY": {"forecast": -0.4, "previous": -0.2},  # Tertiary Industry Activity m/m
+    "GBP": {"forecast": 0.1, "previous": 0.1},    # GDP m/m
+    "EUR": {"forecast": 6.9, "previous": 5.3},    # Trade Balance
+    "CHF": {"forecast": None, "previous": None},   # SECO Economic Forecasts
+    "CAD": {"forecast": 258, "previous": 246},     # Housing Starts
+    "USD": {"forecast": 8.6, "previous": 23.2},    # Philly Fed Manufacturing Index
+    "AUD": {"forecast": None, "previous": None},   # No data today
+    "NZD": {"forecast": None, "previous": None},   # No data today
+    "CNY": {"forecast": None, "previous": None},   # No data today
 }
 
 
@@ -34,36 +34,44 @@ currency_news_schedule = {
         datetime.now(NY_TZ).replace(hour=0, minute=30, second=0, microsecond=0),  # Tertiary Industry Activity
     ],
     "GBP": [
-        datetime.now(NY_TZ).replace(hour=2, minute=0, second=0, microsecond=0),   # GDP, Construction, etc.
-        datetime.now(NY_TZ).replace(hour=4, minute=30, second=0, microsecond=0),  # BOE Credit Conditions
-        datetime.now(NY_TZ).replace(hour=9, minute=0, second=0, microsecond=0),   # MPC Mann Speaks
-        datetime.now(NY_TZ).replace(hour=10, minute=45, second=0, microsecond=0), # MPC Mann again
-        datetime.now(NY_TZ).replace(hour=14, minute=30, second=0, microsecond=0), # MPC Greene Speaks
+        datetime.now(NY_TZ).replace(hour=2, minute=0, second=0, microsecond=0),   # GDP & related data
+        datetime.now(NY_TZ).replace(hour=9, minute=0, second=0, microsecond=0),   # MPC Member Mann Speaks
+        datetime.now(NY_TZ).replace(hour=10, minute=45, second=0, microsecond=0), # Mann Speaks again
+        datetime.now(NY_TZ).replace(hour=14, minute=30, second=0, microsecond=0), # MPC Member Greene Speaks
     ],
     "CHF": [
-        datetime.now(NY_TZ).replace(hour=3, minute=0, second=0, microsecond=0),   # SECO Forecasts
+        datetime.now(NY_TZ).replace(hour=3, minute=0, second=0, microsecond=0),   # SECO Economic Forecasts
     ],
     "EUR": [
         datetime.now(NY_TZ).replace(hour=5, minute=0, second=0, microsecond=0),   # Trade Balance
-        datetime.now(NY_TZ).replace(hour=12, minute=0, second=0, microsecond=0),  # ECB Lagarde Speaks
+        datetime.now(NY_TZ).replace(hour=12, minute=0, second=0, microsecond=0),  # ECB President Lagarde Speaks
     ],
     "CAD": [
         datetime.now(NY_TZ).replace(hour=8, minute=15, second=0, microsecond=0),  # Housing Starts
-        datetime.now(NY_TZ).replace(hour=13, minute=30, second=0, microsecond=0), # BOC Macklem Speaks
+        datetime.now(NY_TZ).replace(hour=13, minute=30, second=0, microsecond=0), # BOC Gov Macklem Speaks
     ],
     "USD": [
-        datetime.now(NY_TZ).replace(hour=8, minute=30, second=0, microsecond=0),  # Philly Fed Index
-        datetime.now(NY_TZ).replace(hour=9, minute=0, second=0, microsecond=0),   # Multiple FOMC Speeches
-        datetime.now(NY_TZ).replace(hour=10, minute=0, second=0, microsecond=0),  # Bowman Speaks
-        datetime.now(NY_TZ).replace(hour=10, minute=30, second=0, microsecond=0), # NatGas Storage
+        datetime.now(NY_TZ).replace(hour=8, minute=30, second=0, microsecond=0),  # Philly Fed Manufacturing Index
+        datetime.now(NY_TZ).replace(hour=9, minute=0, second=0, microsecond=0),   # FOMC Speakers
+        datetime.now(NY_TZ).replace(hour=10, minute=0, second=0, microsecond=0),  # NAHB Housing Index
+        datetime.now(NY_TZ).replace(hour=10, minute=30, second=0, microsecond=0), # Natural Gas Storage
         datetime.now(NY_TZ).replace(hour=12, minute=0, second=0, microsecond=0),  # Crude Oil Inventories
-        datetime.now(NY_TZ).replace(hour=16, minute=15, second=0, microsecond=0), # Miran Speaks
+        datetime.now(NY_TZ).replace(hour=16, minute=15, second=0, microsecond=0), # FOMC Member Miran Speaks
         datetime.now(NY_TZ).replace(hour=18, minute=0, second=0, microsecond=0),  # Kashkari Speaks
+    ],
+    "AUD": [
+        datetime.now(NY_TZ).replace(hour=15, minute=45, second=0, microsecond=0), # RBA Gov Bullock Speaks
+        datetime.now(NY_TZ).replace(hour=17, minute=50, second=0, microsecond=0), # RBA Assist Gov Kent Speaks
+    ],
+    "NZD": [
+        datetime.now(NY_TZ).replace(hour=17, minute=45, second=0, microsecond=0), # FPI m/m
     ],
     "ALL": [
         datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0),   # IMF Meetings
     ],
+    "CNY": [],
 }
+
 
 
 
@@ -214,7 +222,7 @@ if __name__ == "__main__":
         while True:
             now = datetime.now()
             elapsed = (now - start_time).total_seconds()
-            if elapsed < 15 * 60:
+            if elapsed < 60 * 60:
                 for symbol in list(pairs):
                     base_currency, quote_currency = symbol.split("/")
                     base_bias = get_fundamental_bias(base_currency)
@@ -284,7 +292,7 @@ if __name__ == "__main__":
                     else:
                         # --- Slightly looser indicator thresholds (reduce HOLDs) for 60-min expiration ---
                         # Loosened thresholds so more indicators produce BUY/SELL instead of HOLD
-                        rsi_status = "BUY" if last_rsi < 45 else "SELL" if last_rsi > 55 else "HOLD"
+                        rsi_status = "BUY" if last_rsi < 23 else "SELL" if last_rsi > 82 else "HOLD"
                         ema_status = "BUY" if price > ema_20 * 1.0005 else "SELL" if price < ema_20 * 0.9995 else "HOLD"
                         macd_status = "BUY" if macd > 0.00015 else "SELL" if macd < -0.00015 else "HOLD"
                         stoch_status = "BUY" if stoch_k is not None and stoch_k < 40 else "SELL" if stoch_k is not None and stoch_k > 60 else "HOLD"
@@ -335,13 +343,13 @@ if __name__ == "__main__":
 
                         # Indicator weights (unchanged)
                         indicator_weights = {
-                            "rsi": 3,
+                            "rsi": 2,
                             "ema": 2,
-                            "macd": 2,
-                            "stoch": 1,
+                            "macd": 3,
+                            "stoch": 2,
                             "bb": 2,
-                            "cci": 1,
-                            "adx": 3,
+                            "cci": 2,
+                            "adx": 2,
                             "atr": 2,
                             "psar": 2,
                         }
@@ -375,9 +383,9 @@ if __name__ == "__main__":
 
                         # Final signal logic: reduced thresholds so not too strict
                         # Require reasonable weighted score (>=10) and avoid contradiction with HTF
-                        if buy_score >= 11 and higher_tf_bias != "SELL":
+                        if buy_score >= 14 or rsi_status == "BUY":
                             signal = f"BUY (score={buy_score}, HTF={higher_tf_bias})"
-                        elif sell_score >= 11 and higher_tf_bias != "BUY":
+                        elif sell_score >= 14  or rsi_status == "SELL":
                             signal = f"SELL (score={sell_score}, HTF={higher_tf_bias})"
                         else:
                             signal = f"HOLD (score={hold_score}, HTF={higher_tf_bias})"
