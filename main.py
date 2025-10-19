@@ -206,7 +206,7 @@ if __name__ == "__main__":
         while True:
             now = datetime.now()
             elapsed = (now - start_time).total_seconds()
-            if elapsed < 15 * 60:
+            if elapsed < 30 * 60:
                 for symbol in list(pairs):
                     base_currency, quote_currency = symbol.split("/")
                     base_bias = get_fundamental_bias(base_currency)
@@ -276,10 +276,10 @@ if __name__ == "__main__":
                         ema_status = "BUY" if price > ema_20 * 1.001 else "SELL" if price < ema_20 * 0.999 else "HOLD"
                         macd_status = "BUY" if macd > 0 else "SELL" if macd < 0 else "HOLD"
                         # Momentum
-                        rsi_status = "BUY" if last_rsi < 52 else "SELL" if last_rsi > 48 else "HOLD"
+                        rsi_status = "BUY" if last_rsi < 60 else "SELL" if last_rsi > 40 else "HOLD"
                         stoch_status = "BUY" if stoch_k is not None and stoch_k < 45 else "SELL" if stoch_k is not None and stoch_k > 55 else "HOLD"
                         # Volatility
-                        bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.002 else "SELL" if bb_high is not None and price >= bb_high * 0.998 else "HOLD"
+                        bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.005 else "SELL" if bb_high is not None and price >= bb_high * 0.995 else "HOLD"
                         # ATR: compare to short-term average ATR to detect abnormally high volatility
                         atr_series = atr.average_true_range() if hasattr(atr, 'average_true_range') else None
                         avg_atr = None
@@ -290,28 +290,28 @@ if __name__ == "__main__":
                             atr_status = "BUY" if last_atr > avg_atr * 1.02 else "HOLD"
                         # Volume
                         if last_mfi is not None:
-                            mfi_status = "BUY" if last_mfi < 45 else "SELL" if last_mfi > 55 else "HOLD"
+                            mfi_status = "BUY" if last_mfi < 40 else "SELL" if last_mfi > 60 else "HOLD"
                         else:
                             mfi_status = "HOLD"
 
                         # --- Indicator weights (simplified) ---
                         indicator_weights = {
                             "ema20": 1,      # Trend
-                            "macd": 1,       # Trend
+                            # "macd": 1,       # Trend
                             "rsi": 1,        # Momentum
-                            "stoch_k": 1,    # Momentum
+                            # "stoch_k": 1,    # Momentum
                             "bb": 1,         # Volatility
-                            "atr": 1,        # Volatility
+                            # "atr": 1,        # Volatility
                             "mfi": 1,        # Volume
                         }
 
                         indicator_statuses = {
                             "ema20": ema_status,
-                            "macd": macd_status,
+                            # "macd": macd_status,
                             "rsi": rsi_status,
-                            "stoch_k": stoch_status,
+                            # "stoch_k": stoch_status,
                             "bb": bb_status,
-                            "atr": atr_status,
+                            # "atr": atr_status,
                             "mfi": mfi_status,
                         }
 
@@ -331,9 +331,9 @@ if __name__ == "__main__":
                         # For simplicity, remove higher timeframe logic here
 
                         # Final signal logic for 8 indicators
-                        if buy_score >= 5 and sell_score <= 1:
+                        if buy_score >= 3 and sell_score <= 0:
                             signal = "BUY"
-                        elif sell_score >= 5 and buy_score <= 1:
+                        elif sell_score >= 3 and buy_score <= 0:
                             signal = "SELL"
                         else:
                             signal = "HOLD"
