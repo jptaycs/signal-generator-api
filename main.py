@@ -382,9 +382,9 @@ if __name__ == "__main__":
 
                         indicator_weights = {
                             "rsi": 2,
-                            "ema20": 2,
-                            "ema50": 2,
-                            "ema200": 2,
+                            "ema20": 1,
+                            "ema50": 1,
+                            "ema200": 1,
                             "macd": 2,
                             "macd_signal": 1,
                             "stoch_k": 1,
@@ -432,10 +432,10 @@ if __name__ == "__main__":
 
                         # Final signal logic: use higher threshold for 15 indicators
                         # Require reasonable weighted score (>=13) and avoid contradiction with HTF
-                        if buy_score >= 11 and sell_score <= 2:
-                            signal = f"BUY (score={buy_score}, HTF={higher_tf_bias})"
-                        elif sell_score >= 11 and buy_score <= 2:
-                            signal = f"SELL (score={sell_score}, HTF={higher_tf_bias})"
+                        if buy_score >= 12 and sell_score <= 1:
+                            signal = f"SELL (score={buy_score}, HTF={higher_tf_bias})"
+                        elif sell_score >= 12 and buy_score <= 1:
+                            signal = f"BUY (score={sell_score}, HTF={higher_tf_bias})"
                         else:
                             signal = f"HOLD (score={hold_score}, HTF={higher_tf_bias})"
 
