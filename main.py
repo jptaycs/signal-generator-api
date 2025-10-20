@@ -15,45 +15,35 @@ NY_TZ = pytz.timezone("America/New_York")
 # --- Manual or Auto Fundamental Data (Forecast vs Previous) ---
 # You can update these daily or automatically in future versions
 currency_fundamentals = {
-        # No data
+    "EUR": {"previous": -0.5, "forecast": 0.1, "actual": -0.1},
+    "CAD": {"previous": -0.6, "forecast": 0.5, "actual": 0.5},
+    "USD": {"previous": -0.5, "forecast": 0.1, "actual": 0.1},
+    "NZD": {"previous": None, "forecast": None, "actual": -1185},
+    "AUD": {"previous": None, "forecast": None, "actual": None},
 }
 
 
 
 # Add your news schedule with time (NY timezone)
 currency_news_schedule = {
-    "JPY": [
-        datetime.now(NY_TZ).replace(hour=0, minute=30, second=0, microsecond=0),  # Tertiary Industry Activity
-    ],
-    "GBP": [
-        datetime.now(NY_TZ).replace(hour=2, minute=0, second=0, microsecond=0),   # GDP, Construction, etc.
-        datetime.now(NY_TZ).replace(hour=4, minute=30, second=0, microsecond=0),  # BOE Credit Conditions
-        datetime.now(NY_TZ).replace(hour=9, minute=0, second=0, microsecond=0),   # MPC Mann Speaks
-        datetime.now(NY_TZ).replace(hour=10, minute=45, second=0, microsecond=0), # MPC Mann again
-        datetime.now(NY_TZ).replace(hour=14, minute=30, second=0, microsecond=0), # MPC Greene Speaks
-    ],
-    "CHF": [
-        datetime.now(NY_TZ).replace(hour=3, minute=0, second=0, microsecond=0),   # SECO Forecasts
-    ],
     "EUR": [
-        datetime.now(NY_TZ).replace(hour=5, minute=0, second=0, microsecond=0),   # Trade Balance
-        datetime.now(NY_TZ).replace(hour=12, minute=0, second=0, microsecond=0),  # ECB Lagarde Speaks
+        datetime.now(NY_TZ).replace(hour=2, minute=0, second=0, microsecond=0),   # German PPI m/m
+        datetime.now(NY_TZ).replace(hour=4, minute=0, second=0, microsecond=0),   # Current Account
+        datetime.now(NY_TZ).replace(hour=15, minute=0, second=0, microsecond=0),  # Buba President Nagel Speaks
     ],
     "CAD": [
-        datetime.now(NY_TZ).replace(hour=8, minute=15, second=0, microsecond=0),  # Housing Starts
-        datetime.now(NY_TZ).replace(hour=13, minute=30, second=0, microsecond=0), # BOC Macklem Speaks
+        datetime.now(NY_TZ).replace(hour=8, minute=30, second=0, microsecond=0),  # IPPI, RMPI
+        datetime.now(NY_TZ).replace(hour=10, minute=30, second=0, microsecond=0), # BOC Business Outlook Survey
     ],
     "USD": [
-        datetime.now(NY_TZ).replace(hour=8, minute=30, second=0, microsecond=0),  # Philly Fed Index
-        datetime.now(NY_TZ).replace(hour=9, minute=0, second=0, microsecond=0),   # Multiple FOMC Speeches
-        datetime.now(NY_TZ).replace(hour=10, minute=0, second=0, microsecond=0),  # Bowman Speaks
-        datetime.now(NY_TZ).replace(hour=10, minute=30, second=0, microsecond=0), # NatGas Storage
-        datetime.now(NY_TZ).replace(hour=12, minute=0, second=0, microsecond=0),  # Crude Oil Inventories
-        datetime.now(NY_TZ).replace(hour=16, minute=15, second=0, microsecond=0), # Miran Speaks
-        datetime.now(NY_TZ).replace(hour=18, minute=0, second=0, microsecond=0),  # Kashkari Speaks
+        datetime.now(NY_TZ).replace(hour=10, minute=0, second=0, microsecond=0),  # CB Leading Index m/m
     ],
-    "ALL": [
-        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0),   # IMF Meetings
+    "NZD": [
+        datetime.now(NY_TZ).replace(hour=17, minute=45, second=0, microsecond=0), # Trade Balance
+        datetime.now(NY_TZ).replace(hour=22, minute=0, second=0, microsecond=0),  # Credit Card Spending y/y
+    ],
+    "AUD": [
+        datetime.now(NY_TZ).replace(hour=19, minute=45, second=0, microsecond=0), # RBA Assist Gov Jones Speaks
     ],
 }
 
@@ -198,7 +188,37 @@ pairs = [
 
 print("Tracking all available pairs automatically.")
 
+
 price_history = {pair: [] for pair in pairs}
+
+
+# --- Higher timeframe bias function ---
+def get_higher_timeframe_bias(symbol):
+    """Return BUY, SELL, or NEUTRAL bias from the 4h timeframe using EMA50 trend."""
+    url_htf = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=4h&outputsize=100&dp=5&timezone=America/New_York&format=JSON"
+    try:
+        resp_htf = requests.get(url_htf, timeout=10)
+        resp_htf.raise_for_status()
+        raw_htf = resp_htf.json()
+        if "values" not in raw_htf:
+            return "NEUTRAL"
+        df_htf = pd.DataFrame(raw_htf["values"])
+        df_htf["datetime"] = pd.to_datetime(df_htf["datetime"])
+        df_htf = df_htf.sort_values("datetime")
+        df_htf["close"] = df_htf["close"].astype(float)
+        if len(df_htf) < 50:
+            return "NEUTRAL"
+        ema_50 = df_htf["close"].ewm(span=50, adjust=False).mean().iloc[-1]
+        price_htf = df_htf["close"].iloc[-1]
+        if price_htf > ema_50 * 1.0008:
+            return "BUY"
+        elif price_htf < ema_50 * 0.9992:
+            return "SELL"
+        else:
+            return "NEUTRAL"
+    except Exception as ex:
+        print(f"⚠️ Higher timeframe fetch error for {symbol}: {ex}")
+        return "NEUTRAL"
 
 if __name__ == "__main__":
     try:
@@ -440,7 +460,6 @@ if __name__ == "__main__":
                     ema_str = f"{ema_20:.5f}" if ema_20 is not None else "N/A"
                     macd_str = f"{macd:.5f}" if macd is not None else "N/A"
                     rsi_str = f"{last_rsi:.2f}" if last_rsi is not None else "N/A"
-                    stoch_str = f"{stoch_k:.2f}" if stoch_k is not None else "N/A"
                     bb_high_str = f"{bb_high:.5f}" if bb_high is not None else "N/A"
                     bb_low_str = f"{bb_low:.5f}" if bb_low is not None else "N/A"
                     cci_str = f"{last_cci:.2f}" if last_cci is not None else "N/A"
@@ -448,7 +467,9 @@ if __name__ == "__main__":
                     atr_str = f"{last_atr:.5f}" if last_atr is not None else "N/A"
                     psar_str = f"{psar_value:.5f}" if psar_value is not None else "N/A"
 
-                    print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | Stoch: {stoch_str} ({stoch_status}) | BB: Low {bb_low_str}, High {bb_high_str} ({bb_status}) | CCI: {cci_str} ({cci_status}) | ADX: {adx_str} ({adx_status}) | ATR: {atr_str} ({atr_status}) | PSAR: {psar_str} ({psar_status}) | Signal: {signal} | Weighted: BUY={buy_score}, SELL={sell_score}, HOLD={hold_score} | Fundamental Bias: {base_currency}={base_bias}, {quote_currency}={quote_bias}")
+                    # Ensure stoch_k is defined if referenced (not used here, but as per instructions)
+                    stoch_k = None  # Define to avoid NameError if referenced elsewhere
+                    print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema20_status}) | MACD: {macd_str} ({macd_status}) | BB: Low {bb_low_str}, High {bb_high_str} ({bb_status}) | CCI: {cci_str} ({cci_status}) | ADX: {adx_str} ({adx_status}) | ATR: {atr_str} ({atr_status}) | PSAR: {psar_str} ({psar_status}) | Signal: {signal} | Weighted: BUY={buy_score}, SELL={sell_score}, HOLD={hold_score} | Fundamental Bias: {base_currency}={base_bias}, {quote_currency}={quote_bias}")
 
                     # --- Fundamental Bias Blocking ---
                     if signal.startswith("BUY") and (base_bias == "SELL" or quote_bias == "BUY"):
