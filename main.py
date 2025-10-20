@@ -234,76 +234,52 @@ if __name__ == "__main__":
                     df["close"] = df["close"].astype(float)
                     price = df["close"].iloc[-1]
 
-                    # --- Calculate 15 technical indicators ---
-                    # 1. RSI (14)
-                    rsi_indicator = ta.momentum.RSIIndicator(df["close"], window=14)
-                    rsi_values = rsi_indicator.rsi()
-                    last_rsi = rsi_values.iloc[-1] if len(rsi_values) > 0 else None
-                    # 2. EMA 20
+                    # --- Calculate 8 technical indicators (2 per category) ---
+                    # Trend: EMA20, MACD
                     ema_20 = df["close"].ewm(span=20, adjust=False).mean().iloc[-1] if len(df) >= 20 else None
-                    # 3. EMA 50
-                    ema_50 = df["close"].ewm(span=50, adjust=False).mean().iloc[-1] if len(df) >= 50 else None
-                    # 4. EMA 200
-                    ema_200 = df["close"].ewm(span=200, adjust=False).mean().iloc[-1] if len(df) >= 200 else None
-                    # 5. MACD
                     ema_12 = df["close"].ewm(span=12, adjust=False).mean()
                     ema_26 = df["close"].ewm(span=26, adjust=False).mean()
                     macd = (ema_12 - ema_26).iloc[-1] if len(df) >= 26 else None
-                    # 6. MACD Signal
-                    macd_line = ema_12 - ema_26
-                    macd_signal = macd_line.ewm(span=9, adjust=False).mean().iloc[-1] if len(df) >= 35 else None
-                    # 7. Stochastic Oscillator %K
+
+                    # Momentum: RSI, Stochastic Oscillator %K
+                    rsi_indicator = ta.momentum.RSIIndicator(df["close"], window=14)
+                    rsi_values = rsi_indicator.rsi()
+                    last_rsi = rsi_values.iloc[-1] if len(rsi_values) > 0 else None
                     stoch = ta.momentum.StochasticOscillator(
                         high=df["close"], low=df["close"], close=df["close"], window=14, smooth_window=3
                     )
                     stoch_k = stoch.stoch().iloc[-1] if len(df) > 0 else None
-                    # 8. Stochastic Oscillator %D
-                    stoch_d = stoch.stoch_signal().iloc[-1] if len(df) > 0 else None
-                    # 9. Bollinger Bands High
+
+                    # Volatility: Bollinger Bands, ATR
                     bb = ta.volatility.BollingerBands(close=df["close"], window=20, window_dev=2)
                     bb_high = bb.bollinger_hband().iloc[-1] if len(df) > 0 else None
-                    # 10. Bollinger Bands Low
                     bb_low = bb.bollinger_lband().iloc[-1] if len(df) > 0 else None
-                    # 11. CCI (20)
-                    cci = ta.trend.CCIIndicator(high=df["close"], low=df["close"], close=df["close"], window=20)
-                    last_cci = cci.cci().iloc[-1] if len(df) > 0 else None
-                    # 12. ADX (14)
-                    adx = ta.trend.ADXIndicator(high=df["close"], low=df["close"], close=df["close"], window=14)
-                    last_adx = adx.adx().iloc[-1] if len(df) > 0 else None
-                    # 13. Williams %R
-                    willr = ta.momentum.WilliamsRIndicator(high=df["close"], low=df["close"], close=df["close"], lbp=14)
-                    last_willr = willr.williams_r().iloc[-1] if len(df) > 0 else None
-                    # 14. ATR (14)
-                    atr = ta.volatility.AverageTrueRange(high=df["close"], low=df["close"], close=df["close"], window=14)
-                    last_atr = atr.average_true_range().iloc[-1] if len(df) > 0 else None
-                    # 15. OBV
-                    # For OBV, we need a 'volume' column; if not present, set to None
-                    if "volume" in df.columns:
-                        obv = ta.volume.OnBalanceVolumeIndicator(close=df["close"], volume=df["volume"])
-                        last_obv = obv.on_balance_volume().iloc[-1] if len(df) > 0 else None
-                    else:
-                        last_obv = None
-
-                    # Average True Range (ATR)
                     atr = ta.volatility.AverageTrueRange(high=df["close"], low=df["close"], close=df["close"], window=14)
                     last_atr = atr.average_true_range().iloc[-1] if len(df) > 0 else None
 
-                    # Parabolic SAR
-                    psar = ta.trend.PSARIndicator(high=df["close"], low=df["close"], close=df["close"], step=0.02, max_step=0.2)
-                    psar_value = psar.psar().iloc[-1] if len(df) > 0 else None
+                    # Volume: MFI (Money Flow Index) as a proxy for OBV
+                    try:
+                        mfi = ta.volume.MFIIndicator(
+                            high=df["close"], low=df["close"], close=df["close"],
+                            volume=pd.Series(range(len(df))), window=14
+                        )
+                        last_mfi = mfi.money_flow_index().iloc[-1] if len(df) > 0 else None
+                    except Exception:
+                        last_mfi = None
 
                     if last_rsi is None or ema_20 is None or macd is None:
                         signal = "HOLD"
+                        buy_score = sell_score = hold_score = 0
                     else:
-                        # --- Loosened thresholds for 15 indicators to reduce HOLDs ---
-                        rsi_status = "BUY" if last_rsi < 52 else "SELL" if last_rsi > 48 else "HOLD"
+                        # --- Thresholds for 8 indicators ---
+                        # Trend
                         ema_status = "BUY" if price > ema_20 * 1.001 else "SELL" if price < ema_20 * 0.999 else "HOLD"
                         macd_status = "BUY" if macd > 0 else "SELL" if macd < 0 else "HOLD"
+                        # Momentum
+                        rsi_status = "BUY" if last_rsi < 52 else "SELL" if last_rsi > 48 else "HOLD"
                         stoch_status = "BUY" if stoch_k is not None and stoch_k < 45 else "SELL" if stoch_k is not None and stoch_k > 55 else "HOLD"
+                        # Volatility
                         bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.002 else "SELL" if bb_high is not None and price >= bb_high * 0.998 else "HOLD"
-                        cci_status = "BUY" if last_cci is not None and last_cci < -70 else "SELL" if last_cci is not None and last_cci > 70 else "HOLD"
-                        adx_status = "BUY" if last_adx is not None and last_adx > 12 and macd > 0 else "SELL" if last_adx is not None and last_adx > 12 and macd < 0 else "HOLD"
-
                         # ATR: compare to short-term average ATR to detect abnormally high volatility
                         atr_series = atr.average_true_range() if hasattr(atr, 'average_true_range') else None
                         avg_atr = None
@@ -311,109 +287,32 @@ if __name__ == "__main__":
                             avg_atr = atr_series.iloc[-5:].mean()
                         atr_status = "HOLD"
                         if last_atr is not None and avg_atr is not None:
-                            # mark as BUY (volatility present) only if ATR noticeably above recent average
                             atr_status = "BUY" if last_atr > avg_atr * 1.02 else "HOLD"
-
-                        # PSAR
-                        psar_status = "BUY" if psar_value is not None and psar_value < price * 0.9995 else "SELL" if psar_value is not None and psar_value > price * 1.0005 else "HOLD"
-
-                        # --- Multi-timeframe confirmation (4h) ---
-                        def get_higher_timeframe_bias(symbol):
-                            """Returns BUY/SELL/NEUTRAL bias for the 4h timeframe using 50 EMA trend."""
-                            url_htf = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=1min&outputsize=1000&dp=5&timezone=America/New_York&format=JSON"
-                            try:
-                                resp_htf = requests.get(url_htf, timeout=10)
-                                resp_htf.raise_for_status()
-                                raw_htf = resp_htf.json()
-                                if "values" not in raw_htf:
-                                    return "NEUTRAL"
-                                df_htf = pd.DataFrame(raw_htf["values"])
-                                df_htf["datetime"] = pd.to_datetime(df_htf["datetime"])
-                                df_htf = df_htf.sort_values("datetime")
-                                df_htf["close"] = df_htf["close"].astype(float)
-                                if len(df_htf) < 50:
-                                    return "NEUTRAL"
-                                ema_50 = df_htf["close"].ewm(span=50, adjust=False).mean().iloc[-1]
-                                price_htf = df_htf["close"].iloc[-1]
-                                if price_htf > ema_50 * 1.0008:
-                                    return "BUY"
-                                elif price_htf < ema_50 * 0.9992:
-                                    return "SELL"
-                                else:
-                                    return "NEUTRAL"
-                            except Exception as ex:
-                                print(f"⚠️ Higher timeframe fetch error for {symbol}: {ex}")
-                                return "NEUTRAL"
-
-                        # --- 15-indicator scoring block ---
-                        # 1. RSI (14)
-                        # 2. EMA 20
-                        # 3. EMA 50
-                        # 4. EMA 200
-                        # 5. MACD
-                        # 6. MACD Signal
-                        # 7. Stochastic %K
-                        # 8. Stochastic %D
-                        # 9. Bollinger Bands High
-                        # 10. Bollinger Bands Low
-                        # 11. CCI (20)
-                        # 12. ADX (14)
-                        # 13. Williams %R
-                        # 14. ATR (14)
-                        # 15. OBV
-
-                        # --- Status determination for new indicators ---
-                        # EMA50
-                        ema50_status = "BUY" if ema_50 is not None and price > ema_50 * 1.001 else "SELL" if ema_50 is not None and price < ema_50 * 0.999 else "HOLD"
-                        # EMA200
-                        ema200_status = "BUY" if ema_200 is not None and price > ema_200 * 1.001 else "SELL" if ema_200 is not None and price < ema_200 * 0.999 else "HOLD"
-                        # MACD Signal
-                        macd_signal_status = "BUY" if macd_signal is not None and macd_signal > 0 else "SELL" if macd_signal is not None and macd_signal < 0 else "HOLD"
-                        # Stochastic %D
-                        stoch_d_status = "BUY" if stoch_d is not None and stoch_d < 45 else "SELL" if stoch_d is not None and stoch_d > 55 else "HOLD"
-                        # Williams %R
-                        willr_status = "BUY" if last_willr is not None and last_willr < -75 else "SELL" if last_willr is not None and last_willr > -25 else "HOLD"
-                        # OBV (On-Balance Volume)
-                        if last_obv is not None and len(df) >= 3:
-                            obv_trend = last_obv - df["close"].iloc[-3]
-                            obv_status = "BUY" if obv_trend > 0 else "SELL" if obv_trend < 0 else "HOLD"
+                        # Volume
+                        if last_mfi is not None:
+                            mfi_status = "BUY" if last_mfi < 45 else "SELL" if last_mfi > 55 else "HOLD"
                         else:
-                            obv_status = "HOLD"
+                            mfi_status = "HOLD"
 
+                        # --- Indicator weights (simplified) ---
                         indicator_weights = {
-                            "rsi": 2,
-                            "ema20": 1,
-                            "ema50": 1,
-                            "ema200": 1,
-                            "macd": 2,
-                            "macd_signal": 1,
-                            "stoch_k": 1,
-                            "stoch_d": 1,
-                            "bb_high": 1,
-                            "bb_low": 1,
-                            "cci": 1,
-                            "adx": 2,
-                            "willr": 1,
-                            "atr": 1,
-                            "obv": 1,
+                            "ema20": 1,      # Trend
+                            "macd": 1,       # Trend
+                            "rsi": 1,        # Momentum
+                            "stoch_k": 1,    # Momentum
+                            "bb": 1,         # Volatility
+                            "atr": 1,        # Volatility
+                            "mfi": 1,        # Volume
                         }
 
                         indicator_statuses = {
-                            "rsi": rsi_status,
                             "ema20": ema_status,
-                            "ema50": ema50_status,
-                            "ema200": ema200_status,
                             "macd": macd_status,
-                            "macd_signal": macd_signal_status,
+                            "rsi": rsi_status,
                             "stoch_k": stoch_status,
-                            "stoch_d": stoch_d_status,
-                            "bb_high": "SELL" if bb_high is not None and price >= bb_high * 0.9992 else "HOLD",
-                            "bb_low": "BUY" if bb_low is not None and price <= bb_low * 1.0008 else "HOLD",
-                            "cci": cci_status,
-                            "adx": adx_status,
-                            "willr": willr_status,
+                            "bb": bb_status,
                             "atr": atr_status,
-                            "obv": obv_status,
+                            "mfi": mfi_status,
                         }
 
                         buy_score = 0
@@ -428,16 +327,16 @@ if __name__ == "__main__":
                             else:
                                 hold_score += w
 
-                        higher_tf_bias = get_higher_timeframe_bias(symbol)
+                        # --- Multi-timeframe confirmation (optional, can keep or remove) ---
+                        # For simplicity, remove higher timeframe logic here
 
-                        # Final signal logic: use higher threshold for 15 indicators
-                        # Require reasonable weighted score (>=13) and avoid contradiction with HTF
-                        if buy_score >= 12 and sell_score <= 1:
-                            signal = f"SELL (score={buy_score}, HTF={higher_tf_bias})"
-                        elif sell_score >= 12 and buy_score <= 1:
-                            signal = f"BUY (score={sell_score}, HTF={higher_tf_bias})"
+                        # Final signal logic for 8 indicators
+                        if buy_score >= 5 and sell_score <= 1:
+                            signal = "BUY"
+                        elif sell_score >= 5 and buy_score <= 1:
+                            signal = "SELL"
                         else:
-                            signal = f"HOLD (score={hold_score}, HTF={higher_tf_bias})"
+                            signal = "HOLD"
 
                     ema_str = f"{ema_20:.5f}" if ema_20 is not None else "N/A"
                     macd_str = f"{macd:.5f}" if macd is not None else "N/A"
@@ -445,12 +344,10 @@ if __name__ == "__main__":
                     stoch_str = f"{stoch_k:.2f}" if stoch_k is not None else "N/A"
                     bb_high_str = f"{bb_high:.5f}" if bb_high is not None else "N/A"
                     bb_low_str = f"{bb_low:.5f}" if bb_low is not None else "N/A"
-                    cci_str = f"{last_cci:.2f}" if last_cci is not None else "N/A"
-                    adx_str = f"{last_adx:.2f}" if last_adx is not None else "N/A"
                     atr_str = f"{last_atr:.5f}" if last_atr is not None else "N/A"
-                    psar_str = f"{psar_value:.5f}" if psar_value is not None else "N/A"
+                    mfi_str = f"{last_mfi:.2f}" if last_mfi is not None else "N/A"
 
-                    print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | Stoch: {stoch_str} ({stoch_status}) | BB: Low {bb_low_str}, High {bb_high_str} ({bb_status}) | CCI: {cci_str} ({cci_status}) | ADX: {adx_str} ({adx_status}) | ATR: {atr_str} ({atr_status}) | PSAR: {psar_str} ({psar_status}) | Signal: {signal} | Weighted: BUY={buy_score}, SELL={sell_score}, HOLD={hold_score} | Fundamental Bias: {base_currency}={base_bias}, {quote_currency}={quote_bias}")
+                    print(f"{symbol} | Price: {price:.5f} | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | RSI: {rsi_str} ({rsi_status}) | Stoch: {stoch_str} ({stoch_status}) | BB: Low {bb_low_str}, High {bb_high_str} ({bb_status}) | ATR: {atr_str} ({atr_status}) | MFI: {mfi_str} ({mfi_status}) | Signal: {signal} | Weighted: BUY={buy_score}, SELL={sell_score}, HOLD={hold_score} | Fundamental Bias: {base_currency}={base_bias}, {quote_currency}={quote_bias}")
 
                     # --- Fundamental Bias Blocking ---
                     if signal.startswith("BUY") and (base_bias == "SELL" or quote_bias == "BUY"):
