@@ -15,45 +15,45 @@ NY_TZ = pytz.timezone("America/New_York")
 # --- Manual or Auto Fundamental Data (Forecast vs Previous) ---
 # You can update these daily or automatically in future versions
 currency_fundamentals = {
-        # No data
+    "CHF": {"forecast": 5.22, "previous": 4.01},  # Trade Balance - better than expected
+    "GBP": {"forecast": -20.7, "previous": -17.7},  # Public Sector Borrowing - worse (more debt)
+    "CNY": {"forecast": -12.7, "previous": 0},  # FDI drop - weaker
+    "CAD": {"forecast": 3.0, "previous": 3.1},  # CPI slightly cooler
+    "NZD": {"forecast": -1.6, "previous": 0},  # GDT index down
+    "JPY": {"forecast": -0.11, "previous": -0.15},  # Trade balance improved
 }
 
 
 
 # Add your news schedule with time (NY timezone)
 currency_news_schedule = {
-    "JPY": [
-        datetime.now(NY_TZ).replace(hour=0, minute=30, second=0, microsecond=0),  # Tertiary Industry Activity
+    "CHF": [
+        datetime.now(NY_TZ).replace(hour=2, minute=0, second=0, microsecond=0),  # Trade Balance
     ],
     "GBP": [
-        datetime.now(NY_TZ).replace(hour=2, minute=0, second=0, microsecond=0),   # GDP, Construction, etc.
-        datetime.now(NY_TZ).replace(hour=4, minute=30, second=0, microsecond=0),  # BOE Credit Conditions
-        datetime.now(NY_TZ).replace(hour=9, minute=0, second=0, microsecond=0),   # MPC Mann Speaks
-        datetime.now(NY_TZ).replace(hour=10, minute=45, second=0, microsecond=0), # MPC Mann again
-        datetime.now(NY_TZ).replace(hour=14, minute=30, second=0, microsecond=0), # MPC Greene Speaks
+        datetime.now(NY_TZ).replace(hour=2, minute=0, second=0, microsecond=0),  # Borrowing
+        datetime.now(NY_TZ).replace(hour=4, minute=0, second=0, microsecond=0),  # 30y Bond Auction
     ],
-    "CHF": [
-        datetime.now(NY_TZ).replace(hour=3, minute=0, second=0, microsecond=0),   # SECO Forecasts
+    "CNY": [
+        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0),  # FDI tentative
     ],
     "EUR": [
-        datetime.now(NY_TZ).replace(hour=5, minute=0, second=0, microsecond=0),   # Trade Balance
-        datetime.now(NY_TZ).replace(hour=12, minute=0, second=0, microsecond=0),  # ECB Lagarde Speaks
+        datetime.now(NY_TZ).replace(hour=7, minute=0, second=0, microsecond=0),  # Lagarde
+        datetime.now(NY_TZ).replace(hour=18, minute=0, second=0, microsecond=0), # Nagel
     ],
     "CAD": [
-        datetime.now(NY_TZ).replace(hour=8, minute=15, second=0, microsecond=0),  # Housing Starts
-        datetime.now(NY_TZ).replace(hour=13, minute=30, second=0, microsecond=0), # BOC Macklem Speaks
+        datetime.now(NY_TZ).replace(hour=8, minute=30, second=0, microsecond=0), # CPI set
     ],
     "USD": [
-        datetime.now(NY_TZ).replace(hour=8, minute=30, second=0, microsecond=0),  # Philly Fed Index
-        datetime.now(NY_TZ).replace(hour=9, minute=0, second=0, microsecond=0),   # Multiple FOMC Speeches
-        datetime.now(NY_TZ).replace(hour=10, minute=0, second=0, microsecond=0),  # Bowman Speaks
-        datetime.now(NY_TZ).replace(hour=10, minute=30, second=0, microsecond=0), # NatGas Storage
-        datetime.now(NY_TZ).replace(hour=12, minute=0, second=0, microsecond=0),  # Crude Oil Inventories
-        datetime.now(NY_TZ).replace(hour=16, minute=15, second=0, microsecond=0), # Miran Speaks
-        datetime.now(NY_TZ).replace(hour=18, minute=0, second=0, microsecond=0),  # Kashkari Speaks
+        datetime.now(NY_TZ).replace(hour=9, minute=0, second=0, microsecond=0),  # Waller Speaks
+        datetime.now(NY_TZ).replace(hour=15, minute=30, second=0, microsecond=0),# Waller again
+        datetime.now(NY_TZ).replace(hour=16, minute=30, second=0, microsecond=0),# API Bulletin
     ],
-    "ALL": [
-        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0),   # IMF Meetings
+    "NZD": [
+        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0),  # GDT tentative
+    ],
+    "JPY": [
+        datetime.now(NY_TZ).replace(hour=19, minute=50, second=0, microsecond=0), # Trade Balance
     ],
 }
 
