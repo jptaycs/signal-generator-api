@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import random
 import http.client
 import json
+import os
 import pytz
 
 # Timezone for news and trading
@@ -193,7 +194,6 @@ pairs = [
     "GBP/USD", 
     "USD/CAD", 
     "USD/CHF", 
-    "USD/JPY", 
 ]
 
 print("Tracking all available pairs automatically.")
@@ -381,18 +381,18 @@ if __name__ == "__main__":
                             obv_status = "HOLD"
 
                         indicator_weights = {
-                            "rsi": 2,
+                            "rsi": 1,
                             "ema20": 1,
                             "ema50": 1,
                             "ema200": 1,
-                            "macd": 2,
+                            "macd": 1,
                             "macd_signal": 1,
                             "stoch_k": 1,
                             "stoch_d": 1,
                             "bb_high": 1,
                             "bb_low": 1,
                             "cci": 1,
-                            "adx": 2,
+                            "adx": 1,
                             "willr": 1,
                             "atr": 1,
                             "obv": 1,
@@ -432,10 +432,10 @@ if __name__ == "__main__":
 
                         # Final signal logic: use higher threshold for 15 indicators
                         # Require reasonable weighted score (>=13) and avoid contradiction with HTF
-                        if buy_score >= 12 and sell_score <= 1:
-                            signal = f"SELL (score={buy_score}, HTF={higher_tf_bias})"
-                        elif sell_score >= 12 and buy_score <= 1:
-                            signal = f"BUY (score={sell_score}, HTF={higher_tf_bias})"
+                        if buy_score > sell_score:
+                            signal = f"BUY (score={buy_score}, HTF={higher_tf_bias})"
+                        elif sell_score > buy_score:
+                            signal = f"SELL (score={sell_score}, HTF={higher_tf_bias})"
                         else:
                             signal = f"HOLD (score={hold_score}, HTF={higher_tf_bias})"
 
@@ -463,16 +463,70 @@ if __name__ == "__main__":
                     if signal.startswith("BUY") or signal.startswith("SELL"):
                         expiration_minutes = 5
                         expiration_time = f"{expiration_minutes} minutes"
+
                         trade_signal = {
                             "pair": symbol,
                             "action": signal,
                             "expiration": expiration_time,
-                            "time": datetime.now(ZoneInfo("America/New_York")).strftime("%H:%M:%S %Z")
+                            "time": datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%dT%H:%M:%S%z")
                         }
+
+                        try:
+                            log_path = "signals_log.csv"
+                            record = {
+                                "timestamp": datetime.now(ZoneInfo("America/New_York")).isoformat(),
+                                "pair": symbol,
+                                "action": signal.split()[0],
+                                "full_signal": signal,
+                                "price": price,
+                                "rsi_status": rsi_status if 'rsi_status' in locals() else None,
+                                "rsi_value": last_rsi,
+                                "ema20_status": ema_status if 'ema_status' in locals() else None,
+                                "ema20_value": ema_20,
+                                "ema50_status": ema50_status if 'ema50_status' in locals() else None,
+                                "ema50_value": ema_50,
+                                "ema200_status": ema200_status if 'ema200_status' in locals() else None,
+                                "ema200_value": ema_200,
+                                "macd_status": macd_status if 'macd_status' in locals() else None,
+                                "macd_value": macd,
+                                "macd_signal_status": macd_signal_status if 'macd_signal_status' in locals() else None,
+                                "macd_signal_value": macd_signal,
+                                "stoch_k_status": stoch_status if 'stoch_status' in locals() else None,
+                                "stoch_k_value": stoch_k,
+                                "stoch_d_status": stoch_d_status if 'stoch_d_status' in locals() else None,
+                                "stoch_d_value": stoch_d,
+                                "bb_status": bb_status if 'bb_status' in locals() else None,
+                                "bb_high_value": bb_high,
+                                "bb_low_value": bb_low,
+                                "cci_status": cci_status if 'cci_status' in locals() else None,
+                                "cci_value": last_cci,
+                                "adx_status": adx_status if 'adx_status' in locals() else None,
+                                "adx_value": last_adx,
+                                "willr_status": willr_status if 'willr_status' in locals() else None,
+                                "willr_value": last_willr,
+                                "atr_status": atr_status if 'atr_status' in locals() else None,
+                                "atr_value": last_atr,
+                                "obv_status": obv_status if 'obv_status' in locals() else None,
+                                "obv_value": last_obv,
+                                "buy_score": buy_score if 'buy_score' in locals() else None,
+                                "sell_score": sell_score if 'sell_score' in locals() else None,
+                                "hold_score": hold_score if 'hold_score' in locals() else None,
+                                "htf_bias": higher_tf_bias if 'higher_tf_bias' in locals() else None,
+                                "base_bias": base_bias,
+                                "quote_bias": quote_bias,
+                            }
+                            df_log = pd.DataFrame([record])
+                            write_header = not os.path.exists(log_path)
+                            df_log.to_csv(log_path, mode="a", header=write_header, index=False)
+                        except Exception as e:
+                            print(f"⚠️ Error logging signal for {symbol}: {e}")
+
                         send_trade_signal(symbol, signal.split()[0], expiration_minutes)
 
                 # Inside the 20-minute active window, sleep 5 minutes before next check
-                time.sleep(61)
+                time.sleep(850)
+                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Sleeping for 850 seconds (≈14 minutes).")
+                start_time = datetime.now()  # Reset start time after each active cycle
             else:
                 # After 20 minutes active, sleep until one hour from start_time
                 next_cycle = start_time + pd.Timedelta(minutes=30)
