@@ -521,10 +521,41 @@ if __name__ == "__main__":
                         except Exception as e:
                             print(f"⚠️ Error logging signal for {symbol}: {e}")
 
+                        # --- Load ML model and calculate win probability ---
+                        try:
+                            import joblib
+                            model_path = os.path.join("data", "indicator_winrate_model.pkl")
+                            if os.path.exists(model_path):
+                                model = joblib.load(model_path)
+                                feature_values = [
+                                    last_rsi or 0,
+                                    ema_20 or 0,
+                                    ema_50 or 0,
+                                    macd or 0,
+                                    stoch_k or 0,
+                                    bb_high or 0,
+                                    bb_low or 0,
+                                    last_cci or 0,
+                                    last_adx or 0,
+                                    last_willr or 0,
+                                    last_atr or 0,
+                                    last_obv or 0,
+                                ]
+                                win_probability = model.predict_proba([feature_values])[0][1]
+                                print(f"🤖 ML Win Probability for {symbol}: {win_probability:.2%}")
+
+                                if win_probability < 0.85:
+                                    print(f"⚠️ Skipping {symbol} signal ({signal}) due to low win probability ({win_probability:.2%})")
+                                    continue
+                            else:
+                                print("⚠️ No ML model found — sending signals without ML filter.")
+                        except Exception as e:
+                            print(f"⚠️ ML model error: {e}")
+
                         send_trade_signal(symbol, signal.split()[0], expiration_minutes)
 
                 # Inside the 20-minute active window, sleep 5 minutes before next check
-                time.sleep(850)
+                time.sleep(61)
                 print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Sleeping for 850 seconds (≈14 minutes).")
                 start_time = datetime.now()  # Reset start time after each active cycle
             else:
