@@ -296,10 +296,10 @@ if __name__ == "__main__":
                         signal = "HOLD"
                     else:
                         # --- Loosened thresholds for 15 indicators to reduce HOLDs ---
-                        rsi_status = "BUY" if last_rsi < 52 else "SELL" if last_rsi > 48 else "HOLD"
+                        rsi_status = "BUY" if last_rsi < 30 else "SELL" if last_rsi > 70 else "HOLD"
                         ema_status = "BUY" if price > ema_20 * 1.001 else "SELL" if price < ema_20 * 0.999 else "HOLD"
                         macd_status = "BUY" if macd > 0 else "SELL" if macd < 0 else "HOLD"
-                        stoch_status = "BUY" if stoch_k is not None and stoch_k < 45 else "SELL" if stoch_k is not None and stoch_k > 55 else "HOLD"
+                        stoch_status = "BUY" if stoch_k is not None and stoch_k < 40 else "SELL" if stoch_k is not None and stoch_k > 50 else "HOLD"
                         bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.002 else "SELL" if bb_high is not None and price >= bb_high * 0.998 else "HOLD"
                         cci_status = "BUY" if last_cci is not None and last_cci < -70 else "SELL" if last_cci is not None and last_cci > 70 else "HOLD"
                         adx_status = "BUY" if last_adx is not None and last_adx > 12 and macd > 0 else "SELL" if last_adx is not None and last_adx > 12 and macd < 0 else "HOLD"
@@ -370,7 +370,7 @@ if __name__ == "__main__":
                         # MACD Signal
                         macd_signal_status = "BUY" if macd_signal is not None and macd_signal > 0 else "SELL" if macd_signal is not None and macd_signal < 0 else "HOLD"
                         # Stochastic %D
-                        stoch_d_status = "BUY" if stoch_d is not None and stoch_d < 45 else "SELL" if stoch_d is not None and stoch_d > 55 else "HOLD"
+                        stoch_d_status = "BUY" if stoch_d is not None and stoch_d < 40 else "SELL" if stoch_d is not None and stoch_d > 60 else "HOLD"
                         # Williams %R
                         willr_status = "BUY" if last_willr is not None and last_willr < -75 else "SELL" if last_willr is not None and last_willr > -25 else "HOLD"
                         # OBV (On-Balance Volume)
@@ -524,7 +524,7 @@ if __name__ == "__main__":
                         send_trade_signal(symbol, signal.split()[0], expiration_minutes)
 
                 # Inside the 20-minute active window, sleep 5 minutes before next check
-                time.sleep(850)
+                time.sleep(600)
                 print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Sleeping for 850 seconds (≈14 minutes).")
                 start_time = datetime.now()  # Reset start time after each active cycle
             else:
