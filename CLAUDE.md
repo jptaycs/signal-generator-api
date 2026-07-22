@@ -1,0 +1,42 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+Forex trading signal generator. It polls live currency-pair price data, computes technical indicators, and pushes BUY/SELL trade signals to a Telegram chat. A separate repository, `autobot2-auto-calibration-tweb`, reads those Telegram messages via web scraping and executes the trades automatically on Pocket Option — this repo only generates and sends signals, it does not place trades itself.
+
+## Commands
+
+```bash
+pip install -r requirements.txt
+python main.py
+```
+
+Running prompts interactively for which currency pair to track (`0` for all, or an index from the printed list), then loops indefinitely — poll, compute, signal, sleep to the next minute boundary — until `Ctrl+C`. There is no build step, lint config, or test suite in this repo.
+
+## Architecture
+
+Single-file Python application (`main.py`); no web framework is in use despite `fastapi`/`uvicorn` being listed in `requirements.txt`. Per loop iteration, for each tracked pair:
+
+1. Fetch 1-minute candle data from the Twelve Data API (`/time_series`, 1000 bars, `America/New_York` timezone).
+2. Compute 7 technical indicators: RSI, EMA20, MACD, Stochastic Oscillator, Bollinger Bands, CCI, ADX (via the `ta` library plus manual pandas EWM for EMA/MACD).
+3. Each indicator independently votes BUY / SELL / HOLD using intentionally loose thresholds (e.g. RSI 48/52 instead of the classic 30/70) — this is by design, not a bug.
+4. A signal fires by majority vote: 4 of 7 indicators agreeing triggers BUY or SELL; otherwise HOLD.
+5. On a BUY/SELL signal, `send_trade_signal()` posts a formatted message to Telegram via the Bot API (`sendMessage`).
+6. Sleep until the top of the next minute and repeat.
+
+### Git history context
+
+Current `main` is the simplified 7-indicator version. Other branches on `origin` (`news`, `news-optimized`, `news-strict`, `hybrid`, `strict`, `ML`, `8indicators`, `9indicators`, `20indicators`, etc.) contain experiments not merged into `main` — including a news-API-based filter for volatile/unpredictable candles. If asked to work on news-based filtering or a different indicator count, check whether the relevant branch already has a working implementation before reimplementing from scratch.
+
+## Key Details
+
+- **Data source**: Twelve Data REST API, 1-minute interval.
+- **Notification**: Telegram Bot API — API key, bot token, and chat ID are hardcoded at the top of `main.py`.
+- **Downstream execution**: signals sent to Telegram are consumed by the separate `autobot2-auto-calibration-tweb` repo, which scrapes the Telegram chat and executes trades on Pocket Option. Message format changes in `send_trade_signal()` will break that scraper, so coordinate wording/format changes with that repo.
+- **Style**: keep logic in `main.py` unless splitting into modules is explicitly requested.
+
+## Security Notes
+
+API keys and the Telegram bot token are hardcoded in `main.py` (including several commented-out alternate API keys). These should be moved to environment variables before any public deployment or commit history cleanup.
