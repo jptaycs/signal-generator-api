@@ -38,6 +38,31 @@ def advance_key(reason):
     key_started_at = time.time()
     print(f"[key-rotation] Switching key due to {reason} -> now using '{API_KEYS[current_key_index]['label']}'")
 
+
+def fetch_time_series(symbol):
+    for attempt in range(len(API_KEYS)):
+        key_info = get_active_key()
+        url = (
+            f"https://api.twelvedata.com/time_series?apikey={key_info['key']}"
+            f"&symbol={symbol}&interval=1min&outputsize=1000&dp=2"
+            f"&timezone=America/New_York&format=JSON"
+        )
+        response = requests.get(url)
+        try:
+            raw = response.json()
+        except ValueError:
+            raw = {}
+
+        if response.status_code == 200 and raw.get("status") != "error" and "values" in raw:
+            return raw
+
+        error_msg = raw.get("message", response.text[:200])
+        print(f"[key-rotation] '{key_info['label']}' failed for {symbol}: {error_msg} (HTTP {response.status_code})")
+        advance_key(reason=f"error on {symbol}")
+
+    print(f"[key-rotation] All API keys exhausted for {symbol}, skipping this cycle.")
+    return None
+
 bot_token = "8119532010:AAHBTjlpUUgln260B1a2leDOu1oy6A2WnRo"
 chat_id = "6460198665"  # Replace with your Telegram user ID or channel ID
 def send_trade_signal(symbol, action, expiration_minutes):
