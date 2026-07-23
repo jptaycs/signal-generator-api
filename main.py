@@ -207,6 +207,22 @@ if __name__ == "__main__":
                 adx = ta.trend.ADXIndicator(high=df["high"], low=df["low"], close=df["close"], window=14)
                 last_adx = adx.adx().iloc[-1] if len(df) > 0 else None
 
+                # Higher-timeframe trend, derived by resampling the same 1-min bars we
+                # already fetched (no extra API call) into 5-min candles. Used as a
+                # confirmation filter below so a 1-min majority can't fire against the
+                # larger trend. Margin is deliberately small (0.001%, not the 0.02% used
+                # for the 1-min EMA check) — a wider margin left this HTF check reporting
+                # HOLD on most bars (a 5-min EMA10 rarely strays 0.02% from its own close),
+                # which silently killed nearly every signal when empirically measured.
+                df_htf = df.set_index("datetime").resample("5min").agg({"close": "last"}).dropna()
+                htf_ema = df_htf["close"].ewm(span=10, adjust=False).mean()
+                if len(df_htf) >= 10:
+                    last_htf_close = df_htf["close"].iloc[-1]
+                    last_htf_ema = htf_ema.iloc[-1]
+                    htf_status = "BUY" if last_htf_close > last_htf_ema * 1.00001 else "SELL" if last_htf_close < last_htf_ema * 0.99999 else "HOLD"
+                else:
+                    htf_status = "HOLD"
+
                 if last_rsi is None or ema_20 is None or macd is None:
                     signal = "HOLD"
                 else:
@@ -234,9 +250,9 @@ if __name__ == "__main__":
                     sell_count = statuses.count("SELL")
                     hold_count = statuses.count("HOLD")
 
-                    if buy_count >= 5:
+                    if buy_count >= 6:
                         candidate_signal = "BUY"
-                    elif sell_count >= 5:
+                    elif sell_count >= 6:
                         candidate_signal = "SELL"
                     else:
                         candidate_signal = None
@@ -247,7 +263,16 @@ if __name__ == "__main__":
                     # one (not both) avoids blocking on ADX's trend-strength floor rarely being
                     # met on noisy 1-minute data, while still filtering out majorities with
                     # zero trend backing at all.
-                    if candidate_signal is not None and (macd_status == candidate_signal or adx_status == candidate_signal):
+                    #
+                    # Higher-timeframe guard: additionally, the 5-min resampled trend (htf_status)
+                    # must also agree with the candidate direction. This is a separate, required
+                    # check (not part of the MACD/ADX "at least one" OR) so a 1-min majority can't
+                    # fire against the larger trend, which is the classic false-signal pattern.
+                    if (
+                        candidate_signal is not None
+                        and (macd_status == candidate_signal or adx_status == candidate_signal)
+                        and htf_status == candidate_signal
+                    ):
                         signal = f"{candidate_signal} (score={buy_count if candidate_signal == 'BUY' else sell_count})"
                     else:
                         signal = f"HOLD (score={hold_count})"
