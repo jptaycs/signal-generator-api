@@ -11,11 +11,11 @@ API_KEYS = [
     {"label": "jptayco1109", "key": "652c4b836e0a44a8bb6c5b5004c7057c"},
     {"label": "jptayco 2002", "key": "67a1d34cee5c4fe6a3bac7d5bc1bf864"},
     {"label": "appnado", "key": "cf4fae9291334c638b4e71dc125a0863"},
-    {"label": "sweet", "key": "62a2531773df4b6aa408b234041256d9"},
-    {"label": "sweetMain", "key": "6debb834d8274930911045d03bf65673"},
+    {"label": "mary", "key": "62a2531773df4b6aa408b234041256d9"},
+    {"label": "maryMain", "key": "6debb834d8274930911045d03bf65673"},
     {"label": "jp icloud", "key": "2423e681b7314168a007bf8eb172f061"},
     {"label": "cath", "key": "41ab602809474f36985aadb6b849066e"},
-    {"label": "sweetgbox", "key": "2988c838410642dbb950b62ad7505813"},
+    {"label": "marygbox", "key": "2988c838410642dbb950b62ad7505813"},
 ]
 
 ROTATION_INTERVAL_SECONDS = 600  # 10 minutes
@@ -167,6 +167,11 @@ if __name__ == "__main__":
                 df = pd.DataFrame(raw["values"])
                 df["datetime"] = pd.to_datetime(df["datetime"])
                 df = df.sort_values("datetime")
+                # Twelve Data returns real per-candle open/high/low/close — use the actual
+                # high/low (not a close-only stand-in) so range-based indicators (Stochastic,
+                # CCI, ADX) get real intrabar data instead of a collapsed high=low=close series.
+                df["high"] = df["high"].astype(float)
+                df["low"] = df["low"].astype(float)
                 df["close"] = df["close"].astype(float)
                 price = df["close"].iloc[-1]
 
@@ -185,7 +190,7 @@ if __name__ == "__main__":
 
                 # Stochastic Oscillator
                 stoch = ta.momentum.StochasticOscillator(
-                    high=df["close"], low=df["close"], close=df["close"], window=14, smooth_window=3
+                    high=df["high"], low=df["low"], close=df["close"], window=14, smooth_window=3
                 )
                 stoch_k = stoch.stoch().iloc[-1] if len(df) > 0 else None
 
@@ -195,11 +200,11 @@ if __name__ == "__main__":
                 bb_low = bb.bollinger_lband().iloc[-1] if len(df) > 0 else None
 
                 # Commodity Channel Index (CCI)
-                cci = ta.trend.CCIIndicator(high=df["close"], low=df["close"], close=df["close"], window=20)
+                cci = ta.trend.CCIIndicator(high=df["high"], low=df["low"], close=df["close"], window=20)
                 last_cci = cci.cci().iloc[-1] if len(df) > 0 else None
 
                 # Average Directional Index (ADX)
-                adx = ta.trend.ADXIndicator(high=df["close"], low=df["close"], close=df["close"], window=14)
+                adx = ta.trend.ADXIndicator(high=df["high"], low=df["low"], close=df["close"], window=14)
                 last_adx = adx.adx().iloc[-1] if len(df) > 0 else None
 
                 if last_rsi is None or ema_20 is None or macd is None:
@@ -229,9 +234,9 @@ if __name__ == "__main__":
                     sell_count = statuses.count("SELL")
                     hold_count = statuses.count("HOLD")
 
-                    if buy_count >= 4:
+                    if buy_count >= 5:
                         candidate_signal = "BUY"
-                    elif sell_count >= 4:
+                    elif sell_count >= 5:
                         candidate_signal = "SELL"
                     else:
                         candidate_signal = None
