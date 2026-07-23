@@ -5,6 +5,7 @@ import pandas as pd
 import ta
 from zoneinfo import ZoneInfo
 
+# Pool of Twelve Data API keys, rotated across to stay under each free-tier account's rate limit.
 API_KEYS = [
     {"label": "Unli", "key": "e0c7cd3a05a448bda0c737c99cc4790f"},
     {"label": "jptayco1109", "key": "652c4b836e0a44a8bb6c5b5004c7057c"},
@@ -23,6 +24,9 @@ current_key_index = 0
 key_started_at = time.time()
 
 
+# --- API key rotation ---
+# Returns the currently active key, scheduling a rotation to the next key
+# every ROTATION_INTERVAL_SECONDS regardless of whether requests are failing.
 def get_active_key():
     global current_key_index, key_started_at
     if time.time() - key_started_at >= ROTATION_INTERVAL_SECONDS:
@@ -32,6 +36,8 @@ def get_active_key():
     return API_KEYS[current_key_index]
 
 
+# Immediately moves to the next key (failover), bypassing the 10-minute
+# schedule — used when the active key just failed a request.
 def advance_key(reason):
     global current_key_index, key_started_at
     current_key_index = (current_key_index + 1) % len(API_KEYS)
@@ -39,6 +45,9 @@ def advance_key(reason):
     print(f"[key-rotation] Switching key due to {reason} -> now using '{API_KEYS[current_key_index]['label']}'")
 
 
+# Fetches 1-minute candles for `symbol`, retrying with the next key (via
+# advance_key) on any failure — HTTP error, API error response, malformed
+# JSON, or network exception — up to once per key in the pool.
 def fetch_time_series(symbol):
     for _ in range(len(API_KEYS)):
         # If the 10-min rotation timer fires here, this call may skip the key that was
@@ -63,6 +72,8 @@ def fetch_time_series(symbol):
         except ValueError:
             raw = {}
 
+        # Only treat it as success if the HTTP call succeeded, Twelve Data
+        # didn't return an API-level error, and candle data is actually present.
         if response.status_code == 200 and raw.get("status") != "error" and "values" in raw:
             return raw
 
@@ -70,6 +81,8 @@ def fetch_time_series(symbol):
         print(f"[key-rotation] '{key_info['label']}' failed for {symbol}: {error_msg} (HTTP {response.status_code})")
         advance_key(reason=f"error on {symbol}")
 
+    # Every key in the pool failed for this symbol this cycle; caller skips it
+    # and will retry on the next poll.
     print(f"[key-rotation] All API keys exhausted for {symbol}, skipping this cycle.")
     return None
 
@@ -154,12 +167,15 @@ if __name__ == "__main__":
                 df["close"] = df["close"].astype(float)
                 price = df["close"].iloc[-1]
 
+                # RSI (Relative Strength Index) — momentum indicator
                 rsi_indicator = ta.momentum.RSIIndicator(df["close"], window=14)
                 rsi_values = rsi_indicator.rsi()
                 last_rsi = rsi_values.iloc[-1] if len(rsi_values) > 0 else None
 
+                # EMA20 — 20-period trend indicator, compared against current price
                 ema_20 = df["close"].ewm(span=20, adjust=False).mean().iloc[-1] if len(df) >= 20 else None
 
+                # MACD — difference between the 12- and 26-period EMAs (trend/momentum)
                 ema_12 = df["close"].ewm(span=12, adjust=False).mean()
                 ema_26 = df["close"].ewm(span=26, adjust=False).mean()
                 macd = (ema_12 - ema_26).iloc[-1] if len(df) >= 26 else None
@@ -186,24 +202,39 @@ if __name__ == "__main__":
                 if last_rsi is None or ema_20 is None or macd is None:
                     signal = "HOLD"
                 else:
-                    # Determine status for each indicator (even looser thresholds)
-                    rsi_status = "BUY" if last_rsi < 48 else "SELL" if last_rsi > 52 else "HOLD"
-                    ema_status = "BUY" if price > ema_20 * 1.0001 else "SELL" if price < ema_20 * 0.9999 else "HOLD"
-                    macd_status = "BUY" if macd >= 0 else "SELL"
+                    # Each of the 7 indicators independently votes BUY/SELL/HOLD.
+                    # Thresholds are tightened from the original "loose" values so each
+                    # vote requires a meaningful signal, not just noise around the midpoint.
+                    rsi_status = "BUY" if last_rsi < 40 else "SELL" if last_rsi > 60 else "HOLD"
+                    ema_status = "BUY" if price > ema_20 * 1.0005 else "SELL" if price < ema_20 * 0.9995 else "HOLD"
+                    # MACD deadband (scaled to price) instead of a bare sign check, so small
+                    # oscillations around zero vote HOLD rather than always BUY/SELL.
+                    macd_status = "BUY" if macd > price * 0.00005 else "SELL" if macd < -price * 0.00005 else "HOLD"
                     stoch_status = "BUY" if stoch_k is not None and stoch_k < 35 else "SELL" if stoch_k is not None and stoch_k > 65 else "HOLD"
                     bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.0002 else "SELL" if bb_high is not None and price >= bb_high * 0.9998 else "HOLD"
-                    cci_status = "BUY" if last_cci is not None and last_cci < -70 else "SELL" if last_cci is not None and last_cci > 70 else "HOLD"
-                    adx_status = "BUY" if last_adx is not None and last_adx > 15 and macd > 0 else "SELL" if last_adx is not None and last_adx > 15 and macd < 0 else "HOLD"
+                    cci_status = "BUY" if last_cci is not None and last_cci < -100 else "SELL" if last_cci is not None and last_cci > 100 else "HOLD"
+                    adx_status = "BUY" if last_adx is not None and last_adx > 20 and macd > 0 else "SELL" if last_adx is not None and last_adx > 20 and macd < 0 else "HOLD"
 
+                    # Majority vote: a candidate signal needs at least 4 of 7 indicators to agree.
                     statuses = [rsi_status, ema_status, macd_status, stoch_status, bb_status, cci_status, adx_status]
                     buy_count = statuses.count("BUY")
                     sell_count = statuses.count("SELL")
                     hold_count = statuses.count("HOLD")
 
                     if buy_count >= 4:
-                        signal = f"BUY (score={buy_count})"
+                        candidate_signal = "BUY"
                     elif sell_count >= 4:
-                        signal = f"SELL (score={sell_count})"
+                        candidate_signal = "SELL"
+                    else:
+                        candidate_signal = None
+
+                    # Trend-confirmation guard: a majority isn't enough on its own — MACD and
+                    # ADX (the two trend indicators) must also explicitly agree with the
+                    # candidate direction, or the signal is downgraded to HOLD. This filters
+                    # out majorities built mostly from mean-reversion indicators (RSI, Stoch,
+                    # Bollinger, CCI) agreeing on noise while the actual trend disagrees.
+                    if candidate_signal is not None and macd_status == candidate_signal and adx_status == candidate_signal:
+                        signal = f"{candidate_signal} (score={buy_count if candidate_signal == 'BUY' else sell_count})"
                     else:
                         signal = f"HOLD (score={hold_count})"
 

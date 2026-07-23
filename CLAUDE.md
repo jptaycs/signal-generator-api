@@ -21,8 +21,8 @@ Single-file Python application (`main.py`); no web framework is in use despite `
 
 1. Fetch 1-minute candle data from the Twelve Data API (`/time_series`, 1000 bars, `America/New_York` timezone).
 2. Compute 7 technical indicators: RSI, EMA20, MACD, Stochastic Oscillator, Bollinger Bands, CCI, ADX (via the `ta` library plus manual pandas EWM for EMA/MACD).
-3. Each indicator independently votes BUY / SELL / HOLD using intentionally loose thresholds (e.g. RSI 48/52 instead of the classic 30/70) — this is by design, not a bug.
-4. A signal fires by majority vote: 4 of 7 indicators agreeing triggers BUY or SELL; otherwise HOLD.
+3. Each indicator independently votes BUY / SELL / HOLD (e.g. RSI 40/60, CCI ±100, ADX trend floor 20, a price-scaled MACD deadband instead of a bare zero-sign check).
+4. A signal fires by majority vote (4 of 7 indicators agreeing) **and** a trend-confirmation guard: MACD and ADX must both also agree with that majority's direction, or the candidate signal is downgraded to HOLD. This exists to stop mean-reversion indicators (RSI, Stochastic, Bollinger, CCI) from outvoting an absent or conflicting trend.
 5. On a BUY/SELL signal, `send_trade_signal()` posts a formatted message to Telegram via the Bot API (`sendMessage`).
 6. Sleep until the top of the next minute and repeat.
 
