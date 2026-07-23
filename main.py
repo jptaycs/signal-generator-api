@@ -204,17 +204,17 @@ if __name__ == "__main__":
                 else:
                     # Each of the 7 indicators independently votes BUY/SELL/HOLD.
                     # Thresholds are moderately tightened from the original "loose" values —
-                    # eased back partway after the first tightening pass proved too strict
-                    # and left the signal stuck on HOLD almost permanently.
-                    rsi_status = "BUY" if last_rsi < 43 else "SELL" if last_rsi > 57 else "HOLD"
-                    ema_status = "BUY" if price > ema_20 * 1.0003 else "SELL" if price < ema_20 * 0.9997 else "HOLD"
+                    # eased back a bit further after the 5-of-7 vote threshold (below) made
+                    # the combination of both too strict to fire at all.
+                    rsi_status = "BUY" if last_rsi < 45 else "SELL" if last_rsi > 55 else "HOLD"
+                    ema_status = "BUY" if price > ema_20 * 1.0002 else "SELL" if price < ema_20 * 0.9998 else "HOLD"
                     # MACD deadband (scaled to price) instead of a bare sign check, so small
                     # oscillations around zero vote HOLD rather than always BUY/SELL.
-                    macd_status = "BUY" if macd > price * 0.00003 else "SELL" if macd < -price * 0.00003 else "HOLD"
+                    macd_status = "BUY" if macd > price * 0.00002 else "SELL" if macd < -price * 0.00002 else "HOLD"
                     stoch_status = "BUY" if stoch_k is not None and stoch_k < 35 else "SELL" if stoch_k is not None and stoch_k > 65 else "HOLD"
                     bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.0002 else "SELL" if bb_high is not None and price >= bb_high * 0.9998 else "HOLD"
-                    cci_status = "BUY" if last_cci is not None and last_cci < -85 else "SELL" if last_cci is not None and last_cci > 85 else "HOLD"
-                    adx_status = "BUY" if last_adx is not None and last_adx > 17 and macd > 0 else "SELL" if last_adx is not None and last_adx > 17 and macd < 0 else "HOLD"
+                    cci_status = "BUY" if last_cci is not None and last_cci < -75 else "SELL" if last_cci is not None and last_cci > 75 else "HOLD"
+                    adx_status = "BUY" if last_adx is not None and last_adx > 16 and macd > 0 else "SELL" if last_adx is not None and last_adx > 16 and macd < 0 else "HOLD"
 
                     # Majority vote: a candidate signal needs at least 5 of 7 indicators to
                     # agree (raised from 4 — a bare 4-of-7 majority was firing on weak/mixed
