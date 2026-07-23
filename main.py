@@ -108,6 +108,129 @@ def send_trade_signal(symbol, action, expiration_minutes):
     if response.status_code != 200:
         print("Failed to send Telegram message:", response.text)
 
+
+def evaluate_bar(df):
+    price = df["close"].iloc[-1]
+
+    # RSI (Relative Strength Index) — momentum indicator
+    rsi_indicator = ta.momentum.RSIIndicator(df["close"], window=14)
+    rsi_values = rsi_indicator.rsi()
+    last_rsi = rsi_values.iloc[-1] if len(rsi_values) > 0 else None
+
+    # EMA20 — 20-period trend indicator, compared against current price
+    ema_20 = df["close"].ewm(span=20, adjust=False).mean().iloc[-1] if len(df) >= 20 else None
+
+    # MACD — difference between the 12- and 26-period EMAs (trend/momentum)
+    ema_12 = df["close"].ewm(span=12, adjust=False).mean()
+    ema_26 = df["close"].ewm(span=26, adjust=False).mean()
+    macd = (ema_12 - ema_26).iloc[-1] if len(df) >= 26 else None
+
+    # Stochastic Oscillator
+    stoch = ta.momentum.StochasticOscillator(
+        high=df["high"], low=df["low"], close=df["close"], window=14, smooth_window=3
+    )
+    stoch_k = stoch.stoch().iloc[-1] if len(df) > 0 else None
+
+    # Bollinger Bands
+    bb = ta.volatility.BollingerBands(close=df["close"], window=20, window_dev=2)
+    bb_high = bb.bollinger_hband().iloc[-1] if len(df) > 0 else None
+    bb_low = bb.bollinger_lband().iloc[-1] if len(df) > 0 else None
+
+    # Commodity Channel Index (CCI)
+    cci = ta.trend.CCIIndicator(high=df["high"], low=df["low"], close=df["close"], window=20)
+    last_cci = cci.cci().iloc[-1] if len(df) > 0 else None
+
+    # Average Directional Index (ADX)
+    adx = ta.trend.ADXIndicator(high=df["high"], low=df["low"], close=df["close"], window=14)
+    last_adx = adx.adx().iloc[-1] if len(df) > 0 else None
+
+    # Higher-timeframe trend, derived by resampling the same 1-min bars we
+    # already have (no extra API call) into 5-min candles. Used as a
+    # confirmation filter below so a 1-min majority can't fire against the
+    # larger trend. Margin is deliberately small (0.001%, not the 0.02% used
+    # for the 1-min EMA check) — a wider margin left this HTF check reporting
+    # HOLD on most bars, which silently killed nearly every signal when
+    # empirically measured.
+    df_htf = df.set_index("datetime").resample("5min").agg({"close": "last"}).dropna()
+    htf_ema = df_htf["close"].ewm(span=10, adjust=False).mean()
+    if len(df_htf) >= 10:
+        last_htf_close = df_htf["close"].iloc[-1]
+        last_htf_ema = htf_ema.iloc[-1]
+        htf_status = "BUY" if last_htf_close > last_htf_ema * 1.00001 else "SELL" if last_htf_close < last_htf_ema * 0.99999 else "HOLD"
+    else:
+        htf_status = "HOLD"
+
+    if last_rsi is None or ema_20 is None or macd is None:
+        return {
+            "price": price,
+            "rsi_status": None, "ema_status": None, "macd_status": None,
+            "stoch_status": None, "bb_status": None, "cci_status": None, "adx_status": None,
+            "htf_status": htf_status,
+            "candidate_signal": None,
+            "block_reason": "insufficient_history",
+            "signal": "HOLD",
+            "buy_count": 0, "sell_count": 0, "hold_count": 0,
+            "last_rsi": last_rsi, "ema_20": ema_20, "macd": macd,
+            "stoch_k": stoch_k, "bb_high": bb_high, "bb_low": bb_low,
+            "last_cci": last_cci, "last_adx": last_adx,
+        }
+
+    # Each of the 7 indicators independently votes BUY/SELL/HOLD.
+    rsi_status = "BUY" if last_rsi < 45 else "SELL" if last_rsi > 55 else "HOLD"
+    ema_status = "BUY" if price > ema_20 * 1.0002 else "SELL" if price < ema_20 * 0.9998 else "HOLD"
+    # MACD deadband (scaled to price) instead of a bare sign check, so small
+    # oscillations around zero vote HOLD rather than always BUY/SELL.
+    macd_status = "BUY" if macd > price * 0.00002 else "SELL" if macd < -price * 0.00002 else "HOLD"
+    stoch_status = "BUY" if stoch_k is not None and stoch_k < 35 else "SELL" if stoch_k is not None and stoch_k > 65 else "HOLD"
+    bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.0002 else "SELL" if bb_high is not None and price >= bb_high * 0.9998 else "HOLD"
+    cci_status = "BUY" if last_cci is not None and last_cci < -75 else "SELL" if last_cci is not None and last_cci > 75 else "HOLD"
+    adx_status = "BUY" if last_adx is not None and last_adx > 16 and macd > 0 else "SELL" if last_adx is not None and last_adx > 16 and macd < 0 else "HOLD"
+
+    # Majority vote: a candidate signal needs at least 6 of 7 indicators to agree.
+    statuses = [rsi_status, ema_status, macd_status, stoch_status, bb_status, cci_status, adx_status]
+    buy_count = statuses.count("BUY")
+    sell_count = statuses.count("SELL")
+    hold_count = statuses.count("HOLD")
+
+    if buy_count >= 6:
+        candidate_signal = "BUY"
+    elif sell_count >= 6:
+        candidate_signal = "SELL"
+    else:
+        candidate_signal = None
+
+    # Guard attribution: no_majority (vote never reached 6-of-7), trend_guard
+    # (neither MACD nor ADX backed the candidate direction), htf_guard (the
+    # 5-min resampled trend disagreed), or None (fired — passed both guards).
+    if candidate_signal is None:
+        block_reason = "no_majority"
+    elif not (macd_status == candidate_signal or adx_status == candidate_signal):
+        block_reason = "trend_guard"
+    elif htf_status != candidate_signal:
+        block_reason = "htf_guard"
+    else:
+        block_reason = None
+
+    if block_reason is None:
+        signal = f"{candidate_signal} (score={buy_count if candidate_signal == 'BUY' else sell_count})"
+    else:
+        signal = f"HOLD (score={hold_count})"
+
+    return {
+        "price": price,
+        "rsi_status": rsi_status, "ema_status": ema_status, "macd_status": macd_status,
+        "stoch_status": stoch_status, "bb_status": bb_status, "cci_status": cci_status, "adx_status": adx_status,
+        "htf_status": htf_status,
+        "candidate_signal": candidate_signal,
+        "block_reason": block_reason,
+        "signal": signal,
+        "buy_count": buy_count, "sell_count": sell_count, "hold_count": hold_count,
+        "last_rsi": last_rsi, "ema_20": ema_20, "macd": macd,
+        "stoch_k": stoch_k, "bb_high": bb_high, "bb_low": bb_low,
+        "last_cci": last_cci, "last_adx": last_adx,
+    }
+
+
 pairs = [
     "AUD/CAD", 
     "AUD/CHF", 
@@ -133,31 +256,31 @@ pairs = [
     "USD/JPY", 
 ]
 
-print("Available pairs:")
-for i, p in enumerate(pairs, start=1):
-    print(f"{i}. {p}")
-# Ask user which pair to track by index, or all
-choice = input(f"What pair do you want to track? (0 for All, 1-{len(pairs)}): ")
-try:
-    choice = int(choice)
-except ValueError:
-    print(f"Invalid input. Please enter an integer between 0 and {len(pairs)}.")
-    exit(1)
-
-if choice == 0:
-    # Track all pairs
-    pass
-elif 1 <= choice <= len(pairs):
-    pairs = [pairs[choice - 1]]
-else:
-    print(f"Choice must be between 0 and {len(pairs)}.")
-    exit(1)
-
-print(f"Tracking the following pairs: {pairs}")
-
-price_history = {pair: [] for pair in pairs}
-
 if __name__ == "__main__":
+    print("Available pairs:")
+    for i, p in enumerate(pairs, start=1):
+        print(f"{i}. {p}")
+    # Ask user which pair to track by index, or all
+    choice = input(f"What pair do you want to track? (0 for All, 1-{len(pairs)}): ")
+    try:
+        choice = int(choice)
+    except ValueError:
+        print(f"Invalid input. Please enter an integer between 0 and {len(pairs)}.")
+        exit(1)
+
+    if choice == 0:
+        # Track all pairs
+        pass
+    elif 1 <= choice <= len(pairs):
+        pairs = [pairs[choice - 1]]
+    else:
+        print(f"Choice must be between 0 and {len(pairs)}.")
+        exit(1)
+
+    print(f"Tracking the following pairs: {pairs}")
+
+    price_history = {pair: [] for pair in pairs}
+
     try:
         while True:
             for symbol in list(pairs):
@@ -173,120 +296,29 @@ if __name__ == "__main__":
                 df["high"] = df["high"].astype(float)
                 df["low"] = df["low"].astype(float)
                 df["close"] = df["close"].astype(float)
-                price = df["close"].iloc[-1]
 
-                # RSI (Relative Strength Index) — momentum indicator
-                rsi_indicator = ta.momentum.RSIIndicator(df["close"], window=14)
-                rsi_values = rsi_indicator.rsi()
-                last_rsi = rsi_values.iloc[-1] if len(rsi_values) > 0 else None
+                result = evaluate_bar(df)
+                price = result["price"]
+                signal = result["signal"]
 
-                # EMA20 — 20-period trend indicator, compared against current price
-                ema_20 = df["close"].ewm(span=20, adjust=False).mean().iloc[-1] if len(df) >= 20 else None
+                rsi_str = f"{result['last_rsi']:.2f}" if result["last_rsi"] is not None else "N/A"
+                ema_str = f"{result['ema_20']:.5f}" if result["ema_20"] is not None else "N/A"
+                macd_str = f"{result['macd']:.5f}" if result["macd"] is not None else "N/A"
+                stoch_str = f"{result['stoch_k']:.2f}" if result["stoch_k"] is not None else "N/A"
+                bb_high_str = f"{result['bb_high']:.5f}" if result["bb_high"] is not None else "N/A"
+                bb_low_str = f"{result['bb_low']:.5f}" if result["bb_low"] is not None else "N/A"
+                cci_str = f"{result['last_cci']:.2f}" if result["last_cci"] is not None else "N/A"
+                adx_str = f"{result['last_adx']:.2f}" if result["last_adx"] is not None else "N/A"
+                block_str = result["block_reason"] if result["block_reason"] is not None else "fired"
 
-                # MACD — difference between the 12- and 26-period EMAs (trend/momentum)
-                ema_12 = df["close"].ewm(span=12, adjust=False).mean()
-                ema_26 = df["close"].ewm(span=26, adjust=False).mean()
-                macd = (ema_12 - ema_26).iloc[-1] if len(df) >= 26 else None
-
-                # Stochastic Oscillator
-                stoch = ta.momentum.StochasticOscillator(
-                    high=df["high"], low=df["low"], close=df["close"], window=14, smooth_window=3
+                print(
+                    f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({result['rsi_status']}) | "
+                    f"EMA20: {ema_str} ({result['ema_status']}) | MACD: {macd_str} ({result['macd_status']}) | "
+                    f"Stoch: {stoch_str} ({result['stoch_status']}) | BB: Low {bb_low_str}, High {bb_high_str} ({result['bb_status']}) | "
+                    f"CCI: {cci_str} ({result['cci_status']}) | ADX: {adx_str} ({result['adx_status']}) | "
+                    f"HTF: {result['htf_status']} | Signal: {signal} | Block: {block_str} | "
+                    f"Breakdown: BUY={result['buy_count']}, SELL={result['sell_count']}, HOLD={result['hold_count']}"
                 )
-                stoch_k = stoch.stoch().iloc[-1] if len(df) > 0 else None
-
-                # Bollinger Bands
-                bb = ta.volatility.BollingerBands(close=df["close"], window=20, window_dev=2)
-                bb_high = bb.bollinger_hband().iloc[-1] if len(df) > 0 else None
-                bb_low = bb.bollinger_lband().iloc[-1] if len(df) > 0 else None
-
-                # Commodity Channel Index (CCI)
-                cci = ta.trend.CCIIndicator(high=df["high"], low=df["low"], close=df["close"], window=20)
-                last_cci = cci.cci().iloc[-1] if len(df) > 0 else None
-
-                # Average Directional Index (ADX)
-                adx = ta.trend.ADXIndicator(high=df["high"], low=df["low"], close=df["close"], window=14)
-                last_adx = adx.adx().iloc[-1] if len(df) > 0 else None
-
-                # Higher-timeframe trend, derived by resampling the same 1-min bars we
-                # already fetched (no extra API call) into 5-min candles. Used as a
-                # confirmation filter below so a 1-min majority can't fire against the
-                # larger trend. Margin is deliberately small (0.001%, not the 0.02% used
-                # for the 1-min EMA check) — a wider margin left this HTF check reporting
-                # HOLD on most bars (a 5-min EMA10 rarely strays 0.02% from its own close),
-                # which silently killed nearly every signal when empirically measured.
-                df_htf = df.set_index("datetime").resample("5min").agg({"close": "last"}).dropna()
-                htf_ema = df_htf["close"].ewm(span=10, adjust=False).mean()
-                if len(df_htf) >= 10:
-                    last_htf_close = df_htf["close"].iloc[-1]
-                    last_htf_ema = htf_ema.iloc[-1]
-                    htf_status = "BUY" if last_htf_close > last_htf_ema * 1.00001 else "SELL" if last_htf_close < last_htf_ema * 0.99999 else "HOLD"
-                else:
-                    htf_status = "HOLD"
-
-                if last_rsi is None or ema_20 is None or macd is None:
-                    signal = "HOLD"
-                else:
-                    # Each of the 7 indicators independently votes BUY/SELL/HOLD.
-                    # Thresholds are moderately tightened from the original "loose" values —
-                    # eased back a bit further after the 5-of-7 vote threshold (below) made
-                    # the combination of both too strict to fire at all.
-                    rsi_status = "BUY" if last_rsi < 45 else "SELL" if last_rsi > 55 else "HOLD"
-                    ema_status = "BUY" if price > ema_20 * 1.0002 else "SELL" if price < ema_20 * 0.9998 else "HOLD"
-                    # MACD deadband (scaled to price) instead of a bare sign check, so small
-                    # oscillations around zero vote HOLD rather than always BUY/SELL.
-                    macd_status = "BUY" if macd > price * 0.00002 else "SELL" if macd < -price * 0.00002 else "HOLD"
-                    stoch_status = "BUY" if stoch_k is not None and stoch_k < 35 else "SELL" if stoch_k is not None and stoch_k > 65 else "HOLD"
-                    bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.0002 else "SELL" if bb_high is not None and price >= bb_high * 0.9998 else "HOLD"
-                    cci_status = "BUY" if last_cci is not None and last_cci < -75 else "SELL" if last_cci is not None and last_cci > 75 else "HOLD"
-                    adx_status = "BUY" if last_adx is not None and last_adx > 16 and macd > 0 else "SELL" if last_adx is not None and last_adx > 16 and macd < 0 else "HOLD"
-
-                    # Majority vote: a candidate signal needs at least 4 of 7 indicators to
-                    # agree. (A prior 5-of-7 requirement was calibrated against data
-                    # corrupted by an upstream dp=2 rounding bug — see fetch_time_series —
-                    # that made most non-JPY pairs report an almost-flat price; on real,
-                    # unrounded price data a 4-of-7 majority is common while 5-of-7 is rare.)
-                    statuses = [rsi_status, ema_status, macd_status, stoch_status, bb_status, cci_status, adx_status]
-                    buy_count = statuses.count("BUY")
-                    sell_count = statuses.count("SELL")
-                    hold_count = statuses.count("HOLD")
-
-                    if buy_count >= 6:
-                        candidate_signal = "BUY"
-                    elif sell_count >= 6:
-                        candidate_signal = "SELL"
-                    else:
-                        candidate_signal = None
-
-                    # Trend-confirmation guard: a majority isn't enough on its own — at least
-                    # one of MACD/ADX (the two trend indicators) must also agree with the
-                    # candidate direction, or the signal is downgraded to HOLD. Requiring only
-                    # one (not both) avoids blocking on ADX's trend-strength floor rarely being
-                    # met on noisy 1-minute data, while still filtering out majorities with
-                    # zero trend backing at all.
-                    #
-                    # Higher-timeframe guard: additionally, the 5-min resampled trend (htf_status)
-                    # must also agree with the candidate direction. This is a separate, required
-                    # check (not part of the MACD/ADX "at least one" OR) so a 1-min majority can't
-                    # fire against the larger trend, which is the classic false-signal pattern.
-                    if (
-                        candidate_signal is not None
-                        and (macd_status == candidate_signal or adx_status == candidate_signal)
-                        and htf_status == candidate_signal
-                    ):
-                        signal = f"{candidate_signal} (score={buy_count if candidate_signal == 'BUY' else sell_count})"
-                    else:
-                        signal = f"HOLD (score={hold_count})"
-
-                ema_str = f"{ema_20:.5f}" if ema_20 is not None else "N/A"
-                macd_str = f"{macd:.5f}" if macd is not None else "N/A"
-                rsi_str = f"{last_rsi:.2f}" if last_rsi is not None else "N/A"
-                stoch_str = f"{stoch_k:.2f}" if stoch_k is not None else "N/A"
-                bb_high_str = f"{bb_high:.5f}" if bb_high is not None else "N/A"
-                bb_low_str = f"{bb_low:.5f}" if bb_low is not None else "N/A"
-                cci_str = f"{last_cci:.2f}" if last_cci is not None else "N/A"
-                adx_str = f"{last_adx:.2f}" if last_adx is not None else "N/A"
-
-                print(f"{symbol} | Price: {price:.5f} | RSI: {rsi_str} ({rsi_status}) | EMA20: {ema_str} ({ema_status}) | MACD: {macd_str} ({macd_status}) | Stoch: {stoch_str} ({stoch_status}) | BB: Low {bb_low_str}, High {bb_high_str} ({bb_status}) | CCI: {cci_str} ({cci_status}) | ADX: {adx_str} ({adx_status}) | Signal: {signal} | Breakdown: BUY={buy_count}, SELL={sell_count}, HOLD={hold_count}")
 
                 if signal.startswith("BUY") or signal.startswith("SELL"):
                     expiration_minutes = 5
