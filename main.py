@@ -112,20 +112,20 @@ pairs = [
     "AUD/USD",
     "CAD/JPY",
     "CAD/CHF",
-    # "CHF/JPY", 
+    "CHF/JPY", 
     "EUR/AUD", 
     "EUR/CAD",
     "EUR/CHF", 
     "EUR/GBP", 
-    # "EUR/JPY",
-    # "EUR/USD",
+    "EUR/JPY",
+    "EUR/USD",
     "GBP/AUD",
     "GBP/CAD",
     "GBP/CHF", 
-    # "GBP/JPY", 
+    "GBP/JPY", 
     "GBP/USD", 
-    # "NZD/JPY",
-    # "USD/CAD", 
+    "NZD/JPY",
+    "USD/CAD", 
     "USD/CHF", 
     "USD/JPY", 
 ]
@@ -216,15 +216,17 @@ if __name__ == "__main__":
                     cci_status = "BUY" if last_cci is not None and last_cci < -85 else "SELL" if last_cci is not None and last_cci > 85 else "HOLD"
                     adx_status = "BUY" if last_adx is not None and last_adx > 17 and macd > 0 else "SELL" if last_adx is not None and last_adx > 17 and macd < 0 else "HOLD"
 
-                    # Majority vote: a candidate signal needs at least 4 of 7 indicators to agree.
+                    # Majority vote: a candidate signal needs at least 5 of 7 indicators to
+                    # agree (raised from 4 — a bare 4-of-7 majority was firing on weak/mixed
+                    # consensus and producing too many losing signals).
                     statuses = [rsi_status, ema_status, macd_status, stoch_status, bb_status, cci_status, adx_status]
                     buy_count = statuses.count("BUY")
                     sell_count = statuses.count("SELL")
                     hold_count = statuses.count("HOLD")
 
-                    if buy_count >= 4:
+                    if buy_count >= 5:
                         candidate_signal = "BUY"
-                    elif sell_count >= 4:
+                    elif sell_count >= 5:
                         candidate_signal = "SELL"
                     else:
                         candidate_signal = None
