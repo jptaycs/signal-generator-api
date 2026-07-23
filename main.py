@@ -54,9 +54,12 @@ def fetch_time_series(symbol):
         # active on entry (it advances once via the timer, again on failure) — harmless,
         # it gets picked up again on a later cycle.
         key_info = get_active_key()
+        # dp=5 for full forex pip/pipette precision (0.0001 pip + a 5th decimal) — dp=2
+        # rounded most non-JPY pairs (e.g. EUR/USD ~1.14xxx) to a flat, unmoving price,
+        # which silently starved every indicator of real price variance.
         url = (
             f"https://api.twelvedata.com/time_series?apikey={key_info['key']}"
-            f"&symbol={symbol}&interval=1min&outputsize=1000&dp=2"
+            f"&symbol={symbol}&interval=1min&outputsize=1000&dp=5"
             f"&timezone=America/New_York&format=JSON"
         )
         try:
@@ -216,17 +219,19 @@ if __name__ == "__main__":
                     cci_status = "BUY" if last_cci is not None and last_cci < -75 else "SELL" if last_cci is not None and last_cci > 75 else "HOLD"
                     adx_status = "BUY" if last_adx is not None and last_adx > 16 and macd > 0 else "SELL" if last_adx is not None and last_adx > 16 and macd < 0 else "HOLD"
 
-                    # Majority vote: a candidate signal needs at least 5 of 7 indicators to
-                    # agree (raised from 4 — a bare 4-of-7 majority was firing on weak/mixed
-                    # consensus and producing too many losing signals).
+                    # Majority vote: a candidate signal needs at least 4 of 7 indicators to
+                    # agree. (A prior 5-of-7 requirement was calibrated against data
+                    # corrupted by an upstream dp=2 rounding bug — see fetch_time_series —
+                    # that made most non-JPY pairs report an almost-flat price; on real,
+                    # unrounded price data a 4-of-7 majority is common while 5-of-7 is rare.)
                     statuses = [rsi_status, ema_status, macd_status, stoch_status, bb_status, cci_status, adx_status]
                     buy_count = statuses.count("BUY")
                     sell_count = statuses.count("SELL")
                     hold_count = statuses.count("HOLD")
 
-                    if buy_count >= 5:
+                    if buy_count >= 4:
                         candidate_signal = "BUY"
-                    elif sell_count >= 5:
+                    elif sell_count >= 4:
                         candidate_signal = "SELL"
                     else:
                         candidate_signal = None
