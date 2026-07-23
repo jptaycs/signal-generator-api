@@ -203,17 +203,18 @@ if __name__ == "__main__":
                     signal = "HOLD"
                 else:
                     # Each of the 7 indicators independently votes BUY/SELL/HOLD.
-                    # Thresholds are tightened from the original "loose" values so each
-                    # vote requires a meaningful signal, not just noise around the midpoint.
-                    rsi_status = "BUY" if last_rsi < 40 else "SELL" if last_rsi > 60 else "HOLD"
-                    ema_status = "BUY" if price > ema_20 * 1.0005 else "SELL" if price < ema_20 * 0.9995 else "HOLD"
+                    # Thresholds are moderately tightened from the original "loose" values —
+                    # eased back partway after the first tightening pass proved too strict
+                    # and left the signal stuck on HOLD almost permanently.
+                    rsi_status = "BUY" if last_rsi < 43 else "SELL" if last_rsi > 57 else "HOLD"
+                    ema_status = "BUY" if price > ema_20 * 1.0003 else "SELL" if price < ema_20 * 0.9997 else "HOLD"
                     # MACD deadband (scaled to price) instead of a bare sign check, so small
                     # oscillations around zero vote HOLD rather than always BUY/SELL.
-                    macd_status = "BUY" if macd > price * 0.00005 else "SELL" if macd < -price * 0.00005 else "HOLD"
+                    macd_status = "BUY" if macd > price * 0.00003 else "SELL" if macd < -price * 0.00003 else "HOLD"
                     stoch_status = "BUY" if stoch_k is not None and stoch_k < 35 else "SELL" if stoch_k is not None and stoch_k > 65 else "HOLD"
                     bb_status = "BUY" if bb_low is not None and price <= bb_low * 1.0002 else "SELL" if bb_high is not None and price >= bb_high * 0.9998 else "HOLD"
-                    cci_status = "BUY" if last_cci is not None and last_cci < -100 else "SELL" if last_cci is not None and last_cci > 100 else "HOLD"
-                    adx_status = "BUY" if last_adx is not None and last_adx > 20 and macd > 0 else "SELL" if last_adx is not None and last_adx > 20 and macd < 0 else "HOLD"
+                    cci_status = "BUY" if last_cci is not None and last_cci < -85 else "SELL" if last_cci is not None and last_cci > 85 else "HOLD"
+                    adx_status = "BUY" if last_adx is not None and last_adx > 17 and macd > 0 else "SELL" if last_adx is not None and last_adx > 17 and macd < 0 else "HOLD"
 
                     # Majority vote: a candidate signal needs at least 4 of 7 indicators to agree.
                     statuses = [rsi_status, ema_status, macd_status, stoch_status, bb_status, cci_status, adx_status]
@@ -228,12 +229,13 @@ if __name__ == "__main__":
                     else:
                         candidate_signal = None
 
-                    # Trend-confirmation guard: a majority isn't enough on its own — MACD and
-                    # ADX (the two trend indicators) must also explicitly agree with the
-                    # candidate direction, or the signal is downgraded to HOLD. This filters
-                    # out majorities built mostly from mean-reversion indicators (RSI, Stoch,
-                    # Bollinger, CCI) agreeing on noise while the actual trend disagrees.
-                    if candidate_signal is not None and macd_status == candidate_signal and adx_status == candidate_signal:
+                    # Trend-confirmation guard: a majority isn't enough on its own — at least
+                    # one of MACD/ADX (the two trend indicators) must also agree with the
+                    # candidate direction, or the signal is downgraded to HOLD. Requiring only
+                    # one (not both) avoids blocking on ADX's trend-strength floor rarely being
+                    # met on noisy 1-minute data, while still filtering out majorities with
+                    # zero trend backing at all.
+                    if candidate_signal is not None and (macd_status == candidate_signal or adx_status == candidate_signal):
                         signal = f"{candidate_signal} (score={buy_count if candidate_signal == 'BUY' else sell_count})"
                     else:
                         signal = f"HOLD (score={hold_count})"
