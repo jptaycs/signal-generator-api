@@ -47,7 +47,14 @@ def fetch_time_series(symbol):
             f"&symbol={symbol}&interval=1min&outputsize=1000&dp=2"
             f"&timezone=America/New_York&format=JSON"
         )
-        response = requests.get(url)
+        try:
+            response = requests.get(url)
+        except requests.exceptions.RequestException as exc:
+            error_msg = str(exc)
+            print(f"[key-rotation] '{key_info['label']}' failed for {symbol}: {error_msg}")
+            advance_key(reason=f"error on {symbol}")
+            continue
+
         try:
             raw = response.json()
         except ValueError:
