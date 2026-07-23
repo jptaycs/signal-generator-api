@@ -40,7 +40,10 @@ def advance_key(reason):
 
 
 def fetch_time_series(symbol):
-    for attempt in range(len(API_KEYS)):
+    for _ in range(len(API_KEYS)):
+        # If the 10-min rotation timer fires here, this call may skip the key that was
+        # active on entry (it advances once via the timer, again on failure) — harmless,
+        # it gets picked up again on a later cycle.
         key_info = get_active_key()
         url = (
             f"https://api.twelvedata.com/time_series?apikey={key_info['key']}"

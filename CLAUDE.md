@@ -32,7 +32,7 @@ Current `main` is the simplified 7-indicator version. Other branches on `origin`
 
 ## Key Details
 
-- **Data source**: Twelve Data REST API, 1-minute interval.
+- **Data source**: Twelve Data REST API, 1-minute interval. The app rotates across a pool of API keys (`API_KEYS` in `main.py`) to stay under free-tier rate limits: switching every 10 minutes on schedule, and immediately failing over to the next key on any request error (HTTP error, API error response, or network exception).
 - **Notification**: Telegram Bot API — API key, bot token, and chat ID are hardcoded at the top of `main.py`.
 - **Downstream execution**: signals sent to Telegram are consumed by the separate `autobot2-auto-calibration-tweb` repo, which scrapes the Telegram chat and executes trades on Pocket Option. Message format changes in `send_trade_signal()` will break that scraper, so coordinate wording/format changes with that repo.
 - **Style**: keep logic in `main.py` unless splitting into modules is explicitly requested.
