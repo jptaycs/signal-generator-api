@@ -5,16 +5,38 @@ import pandas as pd
 import ta
 from zoneinfo import ZoneInfo
 
-API_KEY = "e0c7cd3a05a448bda0c737c99cc4790f"
-# Unli - e0c7cd3a05a448bda0c737c99cc4790f
-# jptayco1109 - 652c4b836e0a44a8bb6c5b5004c7057c
-# jptayco 2002 - 67a1d34cee5c4fe6a3bac7d5bc1bf864
-# appnado - cf4fae9291334c638b4e71dc125a0863
-# sweet - 62a2531773df4b6aa408b234041256d9
-# sweetMain - 6debb834d8274930911045d03bf65673
-# jp icloud - 2423e681b7314168a007bf8eb172f061
-# cath - 41ab602809474f36985aadb6b849066e
-# sweetgbox - 2988c838410642dbb950b62ad7505813
+API_KEYS = [
+    {"label": "Unli", "key": "e0c7cd3a05a448bda0c737c99cc4790f"},
+    {"label": "jptayco1109", "key": "652c4b836e0a44a8bb6c5b5004c7057c"},
+    {"label": "jptayco 2002", "key": "67a1d34cee5c4fe6a3bac7d5bc1bf864"},
+    {"label": "appnado", "key": "cf4fae9291334c638b4e71dc125a0863"},
+    {"label": "sweet", "key": "62a2531773df4b6aa408b234041256d9"},
+    {"label": "sweetMain", "key": "6debb834d8274930911045d03bf65673"},
+    {"label": "jp icloud", "key": "2423e681b7314168a007bf8eb172f061"},
+    {"label": "cath", "key": "41ab602809474f36985aadb6b849066e"},
+    {"label": "sweetgbox", "key": "2988c838410642dbb950b62ad7505813"},
+]
+
+ROTATION_INTERVAL_SECONDS = 600  # 10 minutes
+
+current_key_index = 0
+key_started_at = time.time()
+
+
+def get_active_key():
+    global current_key_index, key_started_at
+    if time.time() - key_started_at >= ROTATION_INTERVAL_SECONDS:
+        current_key_index = (current_key_index + 1) % len(API_KEYS)
+        key_started_at = time.time()
+        print(f"[key-rotation] Scheduled switch (10 min elapsed) -> now using '{API_KEYS[current_key_index]['label']}'")
+    return API_KEYS[current_key_index]
+
+
+def advance_key(reason):
+    global current_key_index, key_started_at
+    current_key_index = (current_key_index + 1) % len(API_KEYS)
+    key_started_at = time.time()
+    print(f"[key-rotation] Switching key due to {reason} -> now using '{API_KEYS[current_key_index]['label']}'")
 
 bot_token = "8119532010:AAHBTjlpUUgln260B1a2leDOu1oy6A2WnRo"
 chat_id = "6460198665"  # Replace with your Telegram user ID or channel ID
