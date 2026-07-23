@@ -142,10 +142,8 @@ if __name__ == "__main__":
     try:
         while True:
             for symbol in list(pairs):
-                url = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=1min&outputsize=1000&dp=2&timezone=America/New_York&format=JSON"
-                response = requests.get(url)
-                raw = response.json()
-                if "values" not in raw:
+                raw = fetch_time_series(symbol)
+                if raw is None:
                     continue
                 df = pd.DataFrame(raw["values"])
                 df["datetime"] = pd.to_datetime(df["datetime"])
