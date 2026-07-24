@@ -4,7 +4,6 @@ from datetime import datetime
 import time
 import pandas as pd
 import ta
-from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -307,8 +306,30 @@ if __name__ == "__main__":
 
     price_history = {pair: [] for pair in pairs}
 
+    # Delayed-send queue: a signal is queued here the moment it fires, then sent
+    # unchanged (no re-check) SIGNAL_DELAY_SECONDS later. Non-blocking — a plain
+    # time.sleep() here would stall polling of every other pair for the whole
+    # delay, so instead each poll cycle just flushes whatever in the queue has
+    # matured. Based on live observation: a 5-minute expiration lost consistently,
+    # while a manually-tested 1-hour expiration won — the signal direction wasn't
+    # wrong, it just needed more time than 5 minutes to play out. This delay +
+    # the 30-minute expiration below are a first attempt at matching that, not
+    # empirically re-tuned yet.
+    SIGNAL_DELAY_SECONDS = 30 * 60
+    pending_signals = []
+
     try:
         while True:
+            # Flush any delayed signals whose wait has elapsed, oldest first.
+            now_ts = time.time()
+            still_pending = []
+            for pending in pending_signals:
+                if now_ts >= pending["send_at"]:
+                    send_trade_signal(pending["symbol"], pending["action"], pending["expiration_minutes"])
+                else:
+                    still_pending.append(pending)
+            pending_signals = still_pending
+
             for symbol in list(pairs):
                 raw = fetch_time_series(symbol)
                 if raw is None:
@@ -347,15 +368,19 @@ if __name__ == "__main__":
                 )
 
                 if signal.startswith("BUY") or signal.startswith("SELL"):
-                    expiration_minutes = 5
-                    expiration_time = f"{expiration_minutes} minutes"
-                    trade_signal = {
-                        "pair": symbol,
-                        "action": signal,
-                        "expiration": expiration_time,
-                        "time": datetime.now(ZoneInfo("America/New_York")).strftime("%H:%M:%S %Z")
-                    }
-                    send_trade_signal(symbol, signal.split()[0], expiration_minutes)
+                    expiration_minutes = 30
+                    action = signal.split()[0]
+                    send_at = now_ts + SIGNAL_DELAY_SECONDS
+                    pending_signals.append({
+                        "symbol": symbol,
+                        "action": action,
+                        "expiration_minutes": expiration_minutes,
+                        "send_at": send_at,
+                    })
+                    print(
+                        f"[delayed-send] Queued {action} for {symbol}, "
+                        f"will send at {datetime.fromtimestamp(send_at).strftime('%H:%M:%S')}"
+                    )
 
             # Wait until the start of the next minute
             now = datetime.now()
