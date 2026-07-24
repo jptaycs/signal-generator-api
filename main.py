@@ -1,3 +1,4 @@
+import os
 import requests
 from datetime import datetime, timedelta, timezone, time as dt_time
 import time
@@ -8,6 +9,58 @@ import random
 import http.client
 import json
 import pytz
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+# Pool of Twelve Data API keys, rotated across to stay under each free-tier account's rate
+# limit. Loaded from the environment (TWELVEDATA_API_KEY_1, _2, ... and matching _LABEL
+# vars) rather than hardcoded, since this repo is public — see .env.example for the format.
+def _load_api_keys():
+    keys = []
+    i = 1
+    while True:
+        key = os.environ.get(f"TWELVEDATA_API_KEY_{i}")
+        if not key:
+            break
+        label = os.environ.get(f"TWELVEDATA_API_KEY_{i}_LABEL", f"key{i}")
+        keys.append({"label": label, "key": key})
+        i += 1
+    if not keys:
+        raise RuntimeError(
+            "No TWELVEDATA_API_KEY_1 (or higher) found in the environment. "
+            "Copy .env.example to .env and fill in real values."
+        )
+    return keys
+
+
+API_KEYS = _load_api_keys()
+
+ROTATION_INTERVAL_SECONDS = 600  # 10 minutes
+
+current_key_index = 0
+key_started_at = time.time()
+
+
+def get_active_key():
+    """Returns the currently active key, scheduling a rotation to the next key
+    every ROTATION_INTERVAL_SECONDS regardless of whether requests are failing."""
+    global current_key_index, key_started_at
+    if time.time() - key_started_at >= ROTATION_INTERVAL_SECONDS:
+        current_key_index = (current_key_index + 1) % len(API_KEYS)
+        key_started_at = time.time()
+        print(f"[key-rotation] Scheduled switch (10 min elapsed) -> now using '{API_KEYS[current_key_index]['label']}'")
+    return API_KEYS[current_key_index]
+
+
+def advance_key(reason):
+    """Immediately moves to the next key (failover), bypassing the 10-minute
+    schedule — used when the active key just failed a request."""
+    global current_key_index, key_started_at
+    current_key_index = (current_key_index + 1) % len(API_KEYS)
+    key_started_at = time.time()
+    print(f"[key-rotation] Switching key due to {reason} -> now using '{API_KEYS[current_key_index]['label']}'")
 
 # --- Manual or Auto Fundamental Data (Forecast vs Previous) ---
 # You can update these daily or automatically in future versions
@@ -106,8 +159,13 @@ blocked_currencies = {}  # e.g., { "USD": datetime_until_unblocked }
 # Same timezone as your trading data
 NY_TZ = pytz.timezone("America/New_York")
 
-bot_token = "8119532010:AAHBTjlpUUgln260B1a2leDOu1oy6A2WnRo"
-chat_id = "6460198665"
+bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+if not bot_token or not chat_id:
+    raise RuntimeError(
+        "TELEGRAM_BOT_TOKEN and/or TELEGRAM_CHAT_ID not set in the environment. "
+        "Copy .env.example to .env and fill in real values."
+    )
 
 
 def send_telegram_message(text, markdown=True):
@@ -144,20 +202,6 @@ def show_news_status_summary():
 
 
 
-
-API_KEY = "e0c7cd3a05a448bda0c737c99cc4790f"
-# Unli - e0c7cd3a05a448bda0c737c99cc4790f
-# jptayco1109 - 652c4b836e0a44a8bb6c5b5004c7057c
-# jptayco 2002 - 67a1d34cee5c4fe6a3bac7d5bc1bf864
-# appnado - cf4fae9291334c638b4e71dc125a0863
-# sweet - 62a2531773df4b6aa408b234041256d9
-# sweetMain - 6debb834d8274930911045d03bf65673
-# jp icloud - 2423e681b7314168a007bf8eb172f061
-# cath - 41ab602809474f36985aadb6b849066e
-# sweetgbox - 2988c838410642dbb950b62ad7505813
-
-bot_token = "8119532010:AAHBTjlpUUgln260B1a2leDOu1oy6A2WnRo"
-chat_id = "6460198665"  # Replace with your Telegram user ID or channel ID
 
 def send_trade_signal(symbol, action, expiration_minutes):
     current_time = datetime.now().strftime("%H:%M")
@@ -230,22 +274,32 @@ if __name__ == "__main__":
                     # Always compute fundamental bias; use forecast vs previous inside ±1 hour, NEUTRAL otherwise
                     base_bias = get_fundamental_bias(base_currency)
                     quote_bias = get_fundamental_bias(quote_currency)
-                    url = f"https://api.twelvedata.com/time_series?apikey={API_KEY}&symbol={symbol}&interval=1h&outputsize=1000&dp=1&timezone=America/New_York&format=JSON"
-                    import random
-
-                    for attempt in range(5):  # up to 5 retries
+                    # Fetch with API key rotation and failover
+                    raw = None
+                    for _ in range(len(API_KEYS)):
+                        key_info = get_active_key()
+                        url = f"https://api.twelvedata.com/time_series?apikey={key_info['key']}&symbol={symbol}&interval=1h&outputsize=1000&dp=1&timezone=America/New_York&format=JSON"
                         try:
                             response = requests.get(url, timeout=10)
-                            response.raise_for_status()
+                        except requests.exceptions.RequestException as exc:
+                            print(f"[key-rotation] '{key_info['label']}' failed for {symbol}: {exc}")
+                            advance_key(reason=f"error on {symbol}")
+                            continue
+
+                        try:
                             raw = response.json()
+                        except ValueError:
+                            raw = {}
+
+                        if response.status_code == 200 and raw.get("status") != "error" and "values" in raw:
                             break
-                        except requests.exceptions.RequestException as e:
-                            print(f"⚠️ Connection issue for {symbol} (attempt {attempt + 1}/5): {e}")
-                            time.sleep(2 ** attempt + random.random())  # exponential backoff
-                    else:
-                        print(f"❌ Failed to fetch data for {symbol} after 5 attempts.")
-                        continue
-                    if "values" not in raw:
+
+                        error_msg = raw.get("message", response.text[:200])
+                        print(f"[key-rotation] '{key_info['label']}' failed for {symbol}: {error_msg} (HTTP {response.status_code})")
+                        advance_key(reason=f"error on {symbol}")
+
+                    if raw is None or "values" not in raw:
+                        print(f"[key-rotation] All API keys exhausted for {symbol}, skipping this cycle.")
                         continue
                     df = pd.DataFrame(raw["values"])
                     df["datetime"] = pd.to_datetime(df["datetime"])
