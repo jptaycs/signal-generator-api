@@ -181,3 +181,6 @@ cython_debug/
 .cursorindexingignore
 # Local git worktrees (per-branch isolation for parallel agent work)
 .worktrees/
+
+# Live snapshot of the delayed-send queue, rewritten on every run — not source, not a log
+queue.md

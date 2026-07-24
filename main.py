@@ -122,10 +122,68 @@ def send_trade_signal(symbol, action, expiration_minutes):
     
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {"chat_id": chat_id, "text": message}
-    
+
     response = requests.post(url, data=payload)
     if response.status_code != 200:
         print("Failed to send Telegram message:", response.text)
+
+
+QUEUE_FILE = "queue.md"
+
+
+def _fmt_time(ts):
+    return datetime.fromtimestamp(ts).strftime("%H:%M:%S")
+
+
+def _fmt_duration(seconds):
+    sign = "-" if seconds < 0 else ""
+    minutes, secs = divmod(int(abs(seconds)), 60)
+    return f"{sign}{minutes}m {secs}s"
+
+
+# Writes queue.md, a live snapshot of the 30-min delayed-send queue (pending
+# and recently-sent), so the delay mechanism can be observed without reading
+# process stdout. Rewritten on every queue change — not a persisted append
+# log, just current in-memory state; restarting the process resets it.
+def write_queue_snapshot(pending_signals, sent_history):
+    now_ts = time.time()
+    lines = [
+        "# Signal Delay Queue",
+        "",
+        f"_Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_",
+        "",
+        "## Pending (queued, will send after 30 min)",
+        "",
+    ]
+    if pending_signals:
+        lines.append("| Symbol | Action | Queued At | Send At (ETA) | Time Remaining |")
+        lines.append("|---|---|---|---|---|")
+        for p in pending_signals:
+            lines.append(
+                f"| {p['symbol']} | {p['action']} | {_fmt_time(p['queued_at'])} | "
+                f"{_fmt_time(p['send_at'])} | {_fmt_duration(p['send_at'] - now_ts)} |"
+            )
+    else:
+        lines.append("_(none pending)_")
+
+    lines += [
+        "",
+        "## Recently Sent (delayed-send history, most recent first, last 50)",
+        "",
+    ]
+    if sent_history:
+        lines.append("| Symbol | Action | Queued At | Sent At | Actual Delay |")
+        lines.append("|---|---|---|---|---|")
+        for s in reversed(sent_history[-50:]):
+            lines.append(
+                f"| {s['symbol']} | {s['action']} | {_fmt_time(s['queued_at'])} | "
+                f"{_fmt_time(s['sent_at'])} | {_fmt_duration(s['sent_at'] - s['queued_at'])} |"
+            )
+    else:
+        lines.append("_(none sent yet)_")
+
+    with open(QUEUE_FILE, "w") as f:
+        f.write("\n".join(lines) + "\n")
 
 
 def evaluate_bar(df):
@@ -317,18 +375,30 @@ if __name__ == "__main__":
     # empirically re-tuned yet.
     SIGNAL_DELAY_SECONDS = 30 * 60
     pending_signals = []
+    sent_history = []
+    write_queue_snapshot(pending_signals, sent_history)
 
     try:
         while True:
             # Flush any delayed signals whose wait has elapsed, oldest first.
             now_ts = time.time()
             still_pending = []
+            queue_changed = False
             for pending in pending_signals:
                 if now_ts >= pending["send_at"]:
                     send_trade_signal(pending["symbol"], pending["action"], pending["expiration_minutes"])
+                    sent_history.append({
+                        "symbol": pending["symbol"],
+                        "action": pending["action"],
+                        "queued_at": pending["queued_at"],
+                        "sent_at": now_ts,
+                    })
+                    queue_changed = True
                 else:
                     still_pending.append(pending)
             pending_signals = still_pending
+            if queue_changed:
+                write_queue_snapshot(pending_signals, sent_history)
 
             for symbol in list(pairs):
                 raw = fetch_time_series(symbol)
@@ -375,8 +445,10 @@ if __name__ == "__main__":
                         "symbol": symbol,
                         "action": action,
                         "expiration_minutes": expiration_minutes,
+                        "queued_at": now_ts,
                         "send_at": send_at,
                     })
+                    write_queue_snapshot(pending_signals, sent_history)
                     print(
                         f"[delayed-send] Queued {action} for {symbol}, "
                         f"will send at {datetime.fromtimestamp(send_at).strftime('%H:%M:%S')}"
