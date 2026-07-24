@@ -11,11 +11,11 @@ API_KEYS = [
     {"label": "jptayco1109", "key": "652c4b836e0a44a8bb6c5b5004c7057c"},
     {"label": "jptayco 2002", "key": "67a1d34cee5c4fe6a3bac7d5bc1bf864"},
     {"label": "appnado", "key": "cf4fae9291334c638b4e71dc125a0863"},
-    {"label": "mary", "key": "62a2531773df4b6aa408b234041256d9"},
-    {"label": "maryMain", "key": "6debb834d8274930911045d03bf65673"},
+    {"label": "cris", "key": "62a2531773df4b6aa408b234041256d9"},
+    {"label": "crisMain", "key": "6debb834d8274930911045d03bf65673"},
     {"label": "jp icloud", "key": "2423e681b7314168a007bf8eb172f061"},
     {"label": "cath", "key": "41ab602809474f36985aadb6b849066e"},
-    {"label": "marygbox", "key": "2988c838410642dbb950b62ad7505813"},
+    {"label": "crisgbox", "key": "2988c838410642dbb950b62ad7505813"},
 ]
 
 ROTATION_INTERVAL_SECONDS = 600  # 10 minutes
@@ -192,9 +192,9 @@ def evaluate_bar(df):
     sell_count = statuses.count("SELL")
     hold_count = statuses.count("HOLD")
 
-    if buy_count >= 6:
+    if buy_count >= 5:
         candidate_signal = "BUY"
-    elif sell_count >= 6:
+    elif sell_count >= 5:
         candidate_signal = "SELL"
     else:
         candidate_signal = None
@@ -231,29 +231,35 @@ def evaluate_bar(df):
     }
 
 
+# Reduced from the full 22-pair list to cut per-cycle API polling load (each
+# tracked pair costs a fetch_time_series() call every 60s, and free-tier
+# credits are the binding constraint — see CLAUDE.md's "Free-Tier API
+# Limitations"). Kept: the 6 forex majors (most liquid, most stable price
+# action) plus EUR/JPY and GBP/JPY (liquid JPY crosses). Commented out below
+# rather than deleted, so any of them can be re-enabled by uncommenting.
 pairs = [
-    "AUD/CAD", 
-    "AUD/CHF", 
-    "AUD/JPY",
+    # "AUD/CAD",
+    # "AUD/CHF",
+    # "AUD/JPY",
     "AUD/USD",
-    "CAD/JPY",
-    "CAD/CHF",
-    "CHF/JPY", 
-    "EUR/AUD", 
-    "EUR/CAD",
-    "EUR/CHF", 
-    "EUR/GBP", 
+    # "CAD/JPY",
+    # "CAD/CHF",  # measured 0.00% fired across ~940 bars (measure_fire_rate.py)
+    # "CHF/JPY",
+    # "EUR/AUD",
+    # "EUR/CAD",
+    # "EUR/CHF",
+    # "EUR/GBP",
     "EUR/JPY",
     "EUR/USD",
-    "GBP/AUD",
-    "GBP/CAD",
-    "GBP/CHF", 
-    "GBP/JPY", 
-    "GBP/USD", 
-    "NZD/JPY",
-    "USD/CAD", 
-    "USD/CHF", 
-    "USD/JPY", 
+    # "GBP/AUD",
+    # "GBP/CAD",
+    # "GBP/CHF",  # measured 0.00% fired across ~940 bars (measure_fire_rate.py)
+    "GBP/JPY",
+    "GBP/USD",
+    # "NZD/JPY",
+    "USD/CAD",
+    "USD/CHF",
+    "USD/JPY",
 ]
 
 if __name__ == "__main__":
