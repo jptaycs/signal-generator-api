@@ -1,22 +1,37 @@
+import os
 import requests
 from datetime import datetime
 import time
 import pandas as pd
 import ta
 from zoneinfo import ZoneInfo
+from dotenv import load_dotenv
 
-# Pool of Twelve Data API keys, rotated across to stay under each free-tier account's rate limit.
-API_KEYS = [
-    {"label": "Unli", "key": "e0c7cd3a05a448bda0c737c99cc4790f"},
-    {"label": "jptayco1109", "key": "652c4b836e0a44a8bb6c5b5004c7057c"},
-    {"label": "jptayco 2002", "key": "67a1d34cee5c4fe6a3bac7d5bc1bf864"},
-    {"label": "appnado", "key": "cf4fae9291334c638b4e71dc125a0863"},
-    {"label": "cris", "key": "62a2531773df4b6aa408b234041256d9"},
-    {"label": "crisMain", "key": "6debb834d8274930911045d03bf65673"},
-    {"label": "jp icloud", "key": "2423e681b7314168a007bf8eb172f061"},
-    {"label": "cath", "key": "41ab602809474f36985aadb6b849066e"},
-    {"label": "crisgbox", "key": "2988c838410642dbb950b62ad7505813"},
-]
+load_dotenv()
+
+
+# Pool of Twelve Data API keys, rotated across to stay under each free-tier account's rate
+# limit. Loaded from the environment (TWELVEDATA_API_KEY_1, _2, ... and matching _LABEL
+# vars) rather than hardcoded, since this repo is public — see .env.example for the format.
+def _load_api_keys():
+    keys = []
+    i = 1
+    while True:
+        key = os.environ.get(f"TWELVEDATA_API_KEY_{i}")
+        if not key:
+            break
+        label = os.environ.get(f"TWELVEDATA_API_KEY_{i}_LABEL", f"key{i}")
+        keys.append({"label": label, "key": key})
+        i += 1
+    if not keys:
+        raise RuntimeError(
+            "No TWELVEDATA_API_KEY_1 (or higher) found in the environment. "
+            "Copy .env.example to .env and fill in real values."
+        )
+    return keys
+
+
+API_KEYS = _load_api_keys()
 
 ROTATION_INTERVAL_SECONDS = 600  # 10 minutes
 
@@ -89,8 +104,13 @@ def fetch_time_series(symbol):
     print(f"[key-rotation] All API keys exhausted for {symbol}, skipping this cycle.")
     return None
 
-bot_token = "8119532010:AAHBTjlpUUgln260B1a2leDOu1oy6A2WnRo"
-chat_id = "6460198665"  # Replace with your Telegram user ID or channel ID
+bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+if not bot_token or not chat_id:
+    raise RuntimeError(
+        "TELEGRAM_BOT_TOKEN and/or TELEGRAM_CHAT_ID not set in the environment. "
+        "Copy .env.example to .env and fill in real values."
+    )
 def send_trade_signal(symbol, action, expiration_minutes):
     current_time = datetime.now().strftime("%H:%M")
     emoji = "🟩" if action.upper() == "BUY" else "🟥"
