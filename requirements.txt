@@ -3,3 +3,4 @@ uvicorn
 requests
 pandas
 ta
+python-dotenv
