@@ -448,13 +448,22 @@ if __name__ == "__main__":
                         else:
                             obv_status = "HOLD"
 
-                        # Trend/momentum indicators carry more weight than the noisier
-                        # oscillators, so the vote reflects trend strength, not just headcount.
+                        # Weighted to favor indicators with real, independent signal and to
+                        # discount the ones prone to false positives:
+                        # - EMA20/50/200 get the most weight — genuine multi-period trend
+                        #   agreement is the strongest evidence this system has.
+                        # - OBV is raised because it's the only indicator built on real
+                        #   volume data rather than a close-price approximation.
+                        # - Stochastic/CCI/ADX/Williams %R/ATR are capped at 1: they're all
+                        #   called with high=low=close (no real intrabar range), so they pin
+                        #   at extremes and generate noisy, correlated votes rather than
+                        #   independent ones. ADX is additionally just echoing MACD's sign,
+                        #   so it no longer gets extra weight for double-counting that.
                         indicator_weights = {
-                            "rsi": 2,
+                            "rsi": 1,
                             "ema20": 3,
-                            "ema50": 2,
-                            "ema200": 2,
+                            "ema50": 3,
+                            "ema200": 3,
                             "macd": 2,
                             "macd_signal": 2,
                             "stoch_k": 1,
@@ -462,10 +471,10 @@ if __name__ == "__main__":
                             "bb_high": 1,
                             "bb_low": 1,
                             "cci": 1,
-                            "adx": 2,
+                            "adx": 1,
                             "willr": 1,
                             "atr": 1,
-                            "obv": 1,
+                            "obv": 2,
                         }
 
                         indicator_statuses = {
@@ -503,7 +512,7 @@ if __name__ == "__main__":
                         # Voting: require a solid weighted majority and a margin over the
                         # other side, blocking only on a direct HTF conflict (not on NEUTRAL).
                         total_weight = sum(indicator_weights.values())
-                        min_vote_share = 0.50
+                        min_vote_share = 0.60
                         required_score = math.ceil(min_vote_share * total_weight)
                         min_margin = 3
 
