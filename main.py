@@ -1,6 +1,7 @@
 import requests
 from datetime import datetime, timedelta, timezone
 import time
+import math
 import pandas as pd
 import ta
 from zoneinfo import ZoneInfo
@@ -64,7 +65,11 @@ currency_news_schedule = {
 
 
 def get_fundamental_bias(currency):
-    """Returns BUY, SELL, or NEUTRAL based on forecast vs previous and news time."""
+    """Returns BUY, SELL, or NEUTRAL based on forecast vs previous and news time.
+    Muted: the news schedule/forecast data below is stale and unmaintained, so this
+    always returns NEUTRAL rather than blocking signals on outdated news windows."""
+    return "NEUTRAL"
+
     now = datetime.now(NY_TZ)
     news_times = currency_news_schedule.get(currency, [])
 
@@ -161,7 +166,7 @@ def _load_api_keys():
 
 API_KEYS = _load_api_keys()
 
-ROTATION_INTERVAL_SECONDS = 600  # 10 minutes
+ROTATION_INTERVAL_SECONDS = 60  # 1 minute
 
 current_key_index = 0
 key_started_at = time.time()
@@ -443,19 +448,21 @@ if __name__ == "__main__":
                         else:
                             obv_status = "HOLD"
 
+                        # Trend/momentum indicators carry more weight than the noisier
+                        # oscillators, so the vote reflects trend strength, not just headcount.
                         indicator_weights = {
-                            "rsi": 1,
-                            "ema20": 1,
-                            "ema50": 1,
-                            "ema200": 1,
-                            "macd": 1,
-                            "macd_signal": 1,
+                            "rsi": 2,
+                            "ema20": 3,
+                            "ema50": 2,
+                            "ema200": 2,
+                            "macd": 2,
+                            "macd_signal": 2,
                             "stoch_k": 1,
                             "stoch_d": 1,
                             "bb_high": 1,
                             "bb_low": 1,
                             "cci": 1,
-                            "adx": 1,
+                            "adx": 2,
                             "willr": 1,
                             "atr": 1,
                             "obv": 1,
@@ -493,11 +500,24 @@ if __name__ == "__main__":
 
                         higher_tf_bias = get_higher_timeframe_bias(symbol)
 
-                        # Final signal logic: use higher threshold for 15 indicators
-                        # Require reasonable weighted score (>=13) and avoid contradiction with HTF
-                        if buy_score > sell_score:
+                        # Voting: require a solid weighted majority and a margin over the
+                        # other side, blocking only on a direct HTF conflict (not on NEUTRAL).
+                        total_weight = sum(indicator_weights.values())
+                        min_vote_share = 0.50
+                        required_score = math.ceil(min_vote_share * total_weight)
+                        min_margin = 3
+
+                        if (
+                            buy_score >= required_score
+                            and (buy_score - sell_score) >= min_margin
+                            and higher_tf_bias != "SELL"
+                        ):
                             signal = f"BUY (score={buy_score}, HTF={higher_tf_bias})"
-                        elif sell_score > buy_score:
+                        elif (
+                            sell_score >= required_score
+                            and (sell_score - buy_score) >= min_margin
+                            and higher_tf_bias != "BUY"
+                        ):
                             signal = f"SELL (score={sell_score}, HTF={higher_tf_bias})"
                         else:
                             signal = f"HOLD (score={hold_score}, HTF={higher_tf_bias})"
@@ -586,9 +606,8 @@ if __name__ == "__main__":
 
                         send_trade_signal(symbol, signal.split()[0], expiration_minutes)
 
-                # Inside the 20-minute active window, sleep 5 minutes before next check
-                time.sleep(600)
-                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Sleeping for 850 seconds (≈14 minutes).")
+                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Cycle complete, sleeping 60 seconds.")
+                time.sleep(60)
                 start_time = datetime.now()  # Reset start time after each active cycle
             else:
                 # After 20 minutes active, sleep until one hour from start_time
