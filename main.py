@@ -27,39 +27,39 @@ currency_fundamentals = {
 
 # Add your news schedule with time (NY timezone)
 currency_news_schedule = {
-    "JPY": [
-        datetime.now(NY_TZ).replace(hour=0, minute=30, second=0, microsecond=0),  # Tertiary Industry Activity
-    ],
-    "GBP": [
-        datetime.now(NY_TZ).replace(hour=2, minute=0, second=0, microsecond=0),   # GDP, Construction, etc.
-        datetime.now(NY_TZ).replace(hour=4, minute=30, second=0, microsecond=0),  # BOE Credit Conditions
-        datetime.now(NY_TZ).replace(hour=9, minute=0, second=0, microsecond=0),   # MPC Mann Speaks
-        datetime.now(NY_TZ).replace(hour=10, minute=45, second=0, microsecond=0), # MPC Mann again
-        datetime.now(NY_TZ).replace(hour=14, minute=30, second=0, microsecond=0), # MPC Greene Speaks
-    ],
-    "CHF": [
-        datetime.now(NY_TZ).replace(hour=3, minute=0, second=0, microsecond=0),   # SECO Forecasts
-    ],
-    "EUR": [
-        datetime.now(NY_TZ).replace(hour=5, minute=0, second=0, microsecond=0),   # Trade Balance
-        datetime.now(NY_TZ).replace(hour=12, minute=0, second=0, microsecond=0),  # ECB Lagarde Speaks
-    ],
-    "CAD": [
-        datetime.now(NY_TZ).replace(hour=8, minute=15, second=0, microsecond=0),  # Housing Starts
-        datetime.now(NY_TZ).replace(hour=13, minute=30, second=0, microsecond=0), # BOC Macklem Speaks
-    ],
-    "USD": [
-        datetime.now(NY_TZ).replace(hour=8, minute=30, second=0, microsecond=0),  # Philly Fed Index
-        datetime.now(NY_TZ).replace(hour=9, minute=0, second=0, microsecond=0),   # Multiple FOMC Speeches
-        datetime.now(NY_TZ).replace(hour=10, minute=0, second=0, microsecond=0),  # Bowman Speaks
-        datetime.now(NY_TZ).replace(hour=10, minute=30, second=0, microsecond=0), # NatGas Storage
-        datetime.now(NY_TZ).replace(hour=12, minute=0, second=0, microsecond=0),  # Crude Oil Inventories
-        datetime.now(NY_TZ).replace(hour=16, minute=15, second=0, microsecond=0), # Miran Speaks
-        datetime.now(NY_TZ).replace(hour=18, minute=0, second=0, microsecond=0),  # Kashkari Speaks
-    ],
-    "ALL": [
-        datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0),   # IMF Meetings
-    ],
+    # "JPY": [
+    #     datetime.now(NY_TZ).replace(hour=0, minute=30, second=0, microsecond=0),  # Tertiary Industry Activity
+    # ],
+    # "GBP": [
+    #     datetime.now(NY_TZ).replace(hour=2, minute=0, second=0, microsecond=0),   # GDP, Construction, etc.
+    #     datetime.now(NY_TZ).replace(hour=4, minute=30, second=0, microsecond=0),  # BOE Credit Conditions
+    #     datetime.now(NY_TZ).replace(hour=9, minute=0, second=0, microsecond=0),   # MPC Mann Speaks
+    #     datetime.now(NY_TZ).replace(hour=10, minute=45, second=0, microsecond=0), # MPC Mann again
+    #     datetime.now(NY_TZ).replace(hour=14, minute=30, second=0, microsecond=0), # MPC Greene Speaks
+    # ],
+    # "CHF": [
+    #     datetime.now(NY_TZ).replace(hour=3, minute=0, second=0, microsecond=0),   # SECO Forecasts
+    # ],
+    # "EUR": [
+    #     datetime.now(NY_TZ).replace(hour=5, minute=0, second=0, microsecond=0),   # Trade Balance
+    #     datetime.now(NY_TZ).replace(hour=12, minute=0, second=0, microsecond=0),  # ECB Lagarde Speaks
+    # ],
+    # "CAD": [
+    #     datetime.now(NY_TZ).replace(hour=8, minute=15, second=0, microsecond=0),  # Housing Starts
+    #     datetime.now(NY_TZ).replace(hour=13, minute=30, second=0, microsecond=0), # BOC Macklem Speaks
+    # ],
+    # "USD": [
+    #     datetime.now(NY_TZ).replace(hour=8, minute=30, second=0, microsecond=0),  # Philly Fed Index
+    #     datetime.now(NY_TZ).replace(hour=9, minute=0, second=0, microsecond=0),   # Multiple FOMC Speeches
+    #     datetime.now(NY_TZ).replace(hour=10, minute=0, second=0, microsecond=0),  # Bowman Speaks
+    #     datetime.now(NY_TZ).replace(hour=10, minute=30, second=0, microsecond=0), # NatGas Storage
+    #     datetime.now(NY_TZ).replace(hour=12, minute=0, second=0, microsecond=0),  # Crude Oil Inventories
+    #     datetime.now(NY_TZ).replace(hour=16, minute=15, second=0, microsecond=0), # Miran Speaks
+    #     datetime.now(NY_TZ).replace(hour=18, minute=0, second=0, microsecond=0),  # Kashkari Speaks
+    # ],
+    # "ALL": [
+    #     datetime.now(NY_TZ).replace(hour=0, minute=0, second=0, microsecond=0),   # IMF Meetings
+    # ],
 }
 
 
@@ -162,7 +162,7 @@ def _load_api_keys():
 
 API_KEYS = _load_api_keys()
 
-ROTATION_INTERVAL_SECONDS = 600  # 10 minutes
+ROTATION_INTERVAL_SECONDS = 60  # 10 minutes
 
 current_key_index = 0
 key_started_at = time.time()
@@ -435,13 +435,13 @@ if __name__ == "__main__":
                         # Trend/momentum indicators carry more weight than the noisier
                         # oscillators, so the vote reflects trend strength, not just headcount.
                         indicator_weights = {
-                            "rsi": 1,
+                            "rsi": 2,
                             "ema20": 2,
                             "ema50": 2,
                             "ema200": 2,
                             "macd": 2,
                             "macd_signal": 2,
-                            "stoch_k": 1,
+                            "stoch_k": 2,
                             "stoch_d": 1,
                             "bb_high": 1,
                             "bb_low": 1,
@@ -487,9 +487,9 @@ if __name__ == "__main__":
                         # Voting: require a solid weighted majority and a margin over the
                         # other side, blocking only on a direct HTF conflict (not on NEUTRAL).
                         total_weight = sum(indicator_weights.values())
-                        min_vote_share = 0.45
+                        min_vote_share = 0.55
                         required_score = math.ceil(min_vote_share * total_weight)
-                        min_margin = 1
+                        min_margin = 3
 
                         if (
                             buy_score >= required_score
